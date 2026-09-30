@@ -1,0 +1,15 @@
+{
+  "name": "local-explorer-ai-monorepo",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Local Explorer AI - Monorepo root",
+  "scripts": {
+    "dev:web": "cd apps/web && npm run dev",
+    "build:web": "cd apps/web && npm run build",
+    "test:api": "cd apps/api && pytest"
+  },
+  "devDependencies": {
+    "@commitlint/cli": "^19.6.1",
+    "@commitlint/config-conventional": "^19.6.0"
+  }
+}
