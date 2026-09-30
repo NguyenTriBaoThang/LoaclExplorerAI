@@ -10,6 +10,7 @@
     "lint": "tsc -b --pretty"
   },
   "dependencies": {
+    "@types/three": "^0.186.0",
     "@vitejs/plugin-react": "^4.3.4",
     "axios": "^1.7.9",
     "leaflet": "^1.9.4",
@@ -17,7 +18,8 @@
     "react": "^18.3.1",
     "react-dom": "^18.3.1",
     "react-leaflet": "^4.2.1",
-    "react-router-dom": "^6.28.1"
+    "react-router-dom": "^6.28.1",
+    "three": "^0.186.1"
   },
   "devDependencies": {
     "@types/leaflet": "^1.9.15",

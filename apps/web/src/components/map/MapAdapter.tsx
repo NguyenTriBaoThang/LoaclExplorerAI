@@ -1,7 +1,8 @@
-import { useEffect } from 'react'
+import { useEffect, useState } from 'react'
 import { Marker, MapContainer, Popup, TileLayer, useMap } from 'react-leaflet'
 import type { LatLngExpression } from 'leaflet'
 import { divIcon } from 'leaflet'
+import { MapPin, Layers, Sparkles } from 'lucide-react'
 
 export interface MapPoint {
   id: string
@@ -15,29 +16,123 @@ export interface MapPoint {
 function FocusPoint({ point }: { point?: MapPoint }) {
   const map = useMap()
   useEffect(() => {
-    if (point) map.flyTo([point.latitude, point.longitude], Math.max(map.getZoom(), 15), { duration: 0.55 })
+    if (point) {
+      map.flyTo([point.latitude, point.longitude], Math.max(map.getZoom(), 15), {
+        duration: 0.8,
+        easeLinearity: 0.25,
+      })
+    }
   }, [point, map])
   return null
 }
 
-export function MapAdapter({ points, selectedId, onSelect, className = '' }: {
-  points: MapPoint[]; selectedId?: string; onSelect?: (id: string) => void; className?: string
+const TILE_PRESETS = {
+  voyager: {
+    name: 'Sáng Thanh Lịch',
+    url: 'https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png',
+    attribution: '&copy; CartoDB &copy; OpenStreetMap contributors',
+  },
+  dark: {
+    name: 'Đêm Huyền Ảo',
+    url: 'https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png',
+    attribution: '&copy; CartoDB &copy; OpenStreetMap contributors',
+  },
+}
+
+export function MapAdapter({
+  points,
+  selectedId,
+  onSelect,
+  className = '',
+}: {
+  points: MapPoint[]
+  selectedId?: string
+  onSelect?: (id: string) => void
+  className?: string
 }) {
+  const [styleMode, setStyleMode] = useState<'voyager' | 'dark'>('voyager')
   const selected = points.find((point) => point.id === selectedId)
   const center: LatLngExpression = [10.775, 106.700]
-  return <div className={`map-shell ${className}`}>
-    <MapContainer center={center} zoom={13} scrollWheelZoom className="map-canvas">
-      <TileLayer attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors' url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png" />
-      <FocusPoint point={selected} />
-      {points.map((point) => {
-        const active = point.id === selectedId
-        const icon = divIcon({ className: 'numbered-map-marker', html: `<span class="map-marker-core ${active ? 'map-marker-active' : ''}"><b>${point.number ?? ''}</b></span>`, iconSize: [29, 29], iconAnchor: [14, 14] })
-        return <Marker key={point.id} position={[point.latitude, point.longitude]} icon={icon} eventHandlers={{ click: () => onSelect?.(point.id) }}>
-          <Popup><div className="map-popup"><span>{point.category ?? 'Trải nghiệm'}</span><strong>{point.name}</strong><small>Vị trí mô phỏng · TP. Hồ Chí Minh</small></div></Popup>
-        </Marker>
-      })}
-    </MapContainer>
-    <div className="map-stamp"><span className="stamp-dot" /> BẢN ĐỒ DEMO · OSM</div>
-    <div className="map-caption">Vị trí minh họa · tuyến đường ước tính</div>
-  </div>
+
+  return (
+    <div className={`map-shell-3d ${className}`}>
+      <MapContainer center={center} zoom={13} scrollWheelZoom className="map-canvas-3d">
+        <TileLayer
+          attribution={TILE_PRESETS[styleMode].attribution}
+          url={TILE_PRESETS[styleMode].url}
+          maxZoom={19}
+        />
+        <FocusPoint point={selected} />
+        {points.map((point) => {
+          const active = point.id === selectedId
+          const icon = divIcon({
+            className: 'custom-3d-marker',
+            html: `
+              <div class="marker-3d-pin ${active ? 'marker-3d-active' : ''}">
+                <div class="marker-pulse-ring"></div>
+                <div class="marker-bubble">
+                  ${point.number ? `<b>${point.number}</b>` : '<span class="marker-dot-inner"></span>'}
+                </div>
+                <div class="marker-stem"></div>
+                <div class="marker-shadow"></div>
+              </div>
+            `,
+            iconSize: [38, 48],
+            iconAnchor: [19, 44],
+            popupAnchor: [0, -42],
+          })
+
+          return (
+            <Marker
+              key={point.id}
+              position={[point.latitude, point.longitude]}
+              icon={icon}
+              eventHandlers={{ click: () => onSelect?.(point.id) }}
+            >
+              <Popup className="custom-3d-popup">
+                <div className="map-popup-3d">
+                  <span className="popup-kicker">{point.category ?? 'Trải nghiệm'}</span>
+                  <strong className="popup-title">{point.name}</strong>
+                  <span className="popup-sub">
+                    <MapPin size={11} /> Vị trí mô phỏng · TP. HCM
+                  </span>
+                  {onSelect && (
+                    <button
+                      type="button"
+                      className="popup-select-btn"
+                      onClick={() => onSelect(point.id)}
+                    >
+                      <Sparkles size={12} /> Xem chi tiết
+                    </button>
+                  )}
+                </div>
+              </Popup>
+            </Marker>
+          )
+        })}
+      </MapContainer>
+
+      {/* Top Map Controls */}
+      <div className="map-3d-controls">
+        <div className="map-3d-badge">
+          <span className="badge-live-pulse" />
+          <span>BẢN ĐỒ 3D VECTOR · SÀI GÒN</span>
+        </div>
+
+        <button
+          type="button"
+          className="map-layer-toggle"
+          onClick={() => setStyleMode(styleMode === 'voyager' ? 'dark' : 'voyager')}
+          title="Chuyển chế độ Sáng / Tối"
+        >
+          <Layers size={13} />
+          <span>{TILE_PRESETS[styleMode].name}</span>
+        </button>
+      </div>
+
+      <div className="map-3d-bottom-info">
+        <span>Tọa độ mô phỏng · Tự động đồng bộ với danh sách</span>
+      </div>
+    </div>
+  )
 }
