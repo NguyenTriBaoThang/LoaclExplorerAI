@@ -427,3 +427,23 @@ FodyWeavers.xsd
 *.msix
 *.msm
 *.msp
+
+# Local Explorer AI runtime and build outputs
+.env
+.env.*
+!.env.example
+.venv/
+venv/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+htmlcov/
+.coverage
+coverage/
+dist/
+*.tsbuildinfo
+*.sqlite
+*.sqlite3
+*.db
+postgres_data/
+redis_data/
