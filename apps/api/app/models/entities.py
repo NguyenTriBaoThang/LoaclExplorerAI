@@ -1,10 +1,28 @@
-from datetime import datetime, timezone
+from datetime import date, datetime, timezone
 from uuid import uuid4
 
-from sqlalchemy import Boolean, DateTime, ForeignKey, Integer, JSON, String, Text, UniqueConstraint
+from sqlalchemy import (
+    ARRAY,
+    BigInteger,
+    Boolean,
+    CheckConstraint,
+    Date,
+    DateTime,
+    Float,
+    ForeignKey,
+    Index,
+    Integer,
+    JSON,
+    String,
+    Text,
+    TypeDecorator,
+    UniqueConstraint,
+)
+from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column, relationship
+from geoalchemy2 import Geometry
 
-from app.core.enums import ItineraryStatus, PriceBasis, SlotStatus, VerificationStatus, enum_values
+from app.core.enums import ItineraryStatus, PriceBasis, SlotStatus, VerificationStatus
 from app.db.base import Base
 
 
@@ -12,14 +30,53 @@ def utcnow() -> datetime:
     return datetime.now(timezone.utc)
 
 
+# PostgreSQL uses native array/JSONB columns to match the team's schema. JSON on
+# SQLite keeps the same models usable by the lightweight test suite.
+TEXT_ARRAY = JSON().with_variant(ARRAY(Text()), "postgresql")
+JSON_DOCUMENT = JSON().with_variant(JSONB(), "postgresql")
+
+
+class PointGeometry(TypeDecorator):
+    """PostGIS POINT in production; plain text in SQLite's non-spatial tests."""
+
+    impl = String
+    cache_ok = True
+
+    def load_dialect_impl(self, dialect):
+        if dialect.name == "postgresql":
+            return dialect.type_descriptor(Geometry("POINT", srid=4326, spatial_index=False))
+        return dialect.type_descriptor(String())
+
+    def process_bind_param(self, value, dialect):
+        if value is not None and dialect.name != "postgresql":
+            return getattr(value, "data", value)
+        return value
+
+
+def provider_slug_default(context) -> str:
+    name = context.get_current_parameters().get("name", "provider")
+    return "-".join(str(name).lower().split())[:180] or "provider"
+
+
+def experience_title_default(context) -> str:
+    return context.get_current_parameters().get("name", "")
+
+
 class Provider(Base):
     __tablename__ = "providers"
+    __table_args__ = (UniqueConstraint("slug", name="uq_providers_slug"),)
 
     id: Mapped[str] = mapped_column(String(36), primary_key=True, default=lambda: str(uuid4()))
     name: Mapped[str] = mapped_column(String(180))
+    slug: Mapped[str] = mapped_column(String(180), default=provider_slug_default)
     description: Mapped[str] = mapped_column(Text, default="")
     contact_phone: Mapped[str | None] = mapped_column(String(40), nullable=True)
     contact_email: Mapped[str | None] = mapped_column(String(254), nullable=True)
+    address: Mapped[str] = mapped_column(String(300), default="")
+    is_active: Mapped[bool] = mapped_column(Boolean, default=True)
+    verification_status: Mapped[str] = mapped_column(String(32), default="mock")
+    portal_access_key: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    # Retained for compatibility with the first project schema/API.
     status: Mapped[str] = mapped_column(String(24), default="active")
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow, onupdate=utcnow)
@@ -28,18 +85,26 @@ class Provider(Base):
 
 class POI(Base):
     __tablename__ = "pois"
+    __table_args__ = (Index("ix_pois_geom", "geom", postgresql_using="gist"),)
 
+    # String IDs support both existing UUID values and the team's readable IDs.
     id: Mapped[str] = mapped_column(String(36), primary_key=True, default=lambda: str(uuid4()))
     name: Mapped[str] = mapped_column(String(180), index=True)
     description: Mapped[str] = mapped_column(Text, default="")
+    district: Mapped[str | None] = mapped_column(String(120), nullable=True, index=True)
     latitude: Mapped[float]
     longitude: Mapped[float]
+    geom: Mapped[object] = mapped_column(PointGeometry(), nullable=False)
     category: Mapped[str] = mapped_column(String(40), index=True)
     address: Mapped[str] = mapped_column(String(300), default="")
+    source_attribution: Mapped[str | None] = mapped_column(Text, nullable=True)
+    is_in_pilot_polygon: Mapped[bool] = mapped_column(Boolean, default=False)
+    image_urls: Mapped[list[str]] = mapped_column(JSON_DOCUMENT, default=list)
     verification_status: Mapped[str] = mapped_column(String(24), default=VerificationStatus.SIMULATED.value)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow, onupdate=utcnow)
     experiences: Mapped[list["Experience"]] = relationship(back_populates="poi")
+    stops: Mapped[list["ItineraryStop"]] = relationship(back_populates="poi")
 
 
 class Experience(Base):
@@ -48,24 +113,41 @@ class Experience(Base):
     id: Mapped[str] = mapped_column(String(36), primary_key=True, default=lambda: str(uuid4()))
     poi_id: Mapped[str] = mapped_column(ForeignKey("pois.id", ondelete="CASCADE"), index=True)
     provider_id: Mapped[str] = mapped_column(ForeignKey("providers.id", ondelete="RESTRICT"), index=True)
+    # `name` is the original API field; `title` is the team's canonical field.
     name: Mapped[str] = mapped_column(String(180), index=True)
+    title: Mapped[str] = mapped_column(String(180), default=experience_title_default)
     description: Mapped[str] = mapped_column(Text, default="")
-    intent_tags: Mapped[list[str]] = mapped_column(JSON, default=list)
+    intent_tags: Mapped[list[str]] = mapped_column(TEXT_ARRAY, default=list)
+    is_hands_on: Mapped[bool] = mapped_column(Boolean, default=False)
+    is_indoor: Mapped[bool] = mapped_column(Boolean, default=True)
     duration_min: Mapped[int] = mapped_column(Integer)
-    indoor: Mapped[bool] = mapped_column(Boolean, default=True)
     price_basis: Mapped[str] = mapped_column(String(24), default=PriceBasis.PER_PERSON.value)
-    price_vnd: Mapped[int] = mapped_column(Integer, default=0)
+    price_vnd: Mapped[int] = mapped_column(BigInteger, default=0)
     verification_status: Mapped[str] = mapped_column(String(24), default=VerificationStatus.SIMULATED.value)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow, onupdate=utcnow)
+    # Legacy alias column retained so current API clients and seed data continue working.
+    indoor: Mapped[bool] = mapped_column(Boolean, default=True)
     poi: Mapped[POI] = relationship(back_populates="experiences")
     provider: Mapped[Provider] = relationship(back_populates="experiences")
     slots: Mapped[list["ExperienceSlot"]] = relationship(back_populates="experience", cascade="all, delete-orphan")
+    similarities_as_a: Mapped[list["IntentSimilarity"]] = relationship(
+        foreign_keys="IntentSimilarity.experience_a_id", back_populates="experience_a"
+    )
+    similarities_as_b: Mapped[list["IntentSimilarity"]] = relationship(
+        foreign_keys="IntentSimilarity.experience_b_id", back_populates="experience_b"
+    )
 
 
 class ExperienceSlot(Base):
     __tablename__ = "experience_slots"
-    __table_args__ = (UniqueConstraint("experience_id", "start_at", name="uq_slot_experience_start"),)
+    __table_args__ = (
+        UniqueConstraint("experience_id", "start_at", name="uq_slot_experience_start"),
+        CheckConstraint(
+            "status IN ('open', 'full', 'cancelled', 'available', 'unavailable', 'tentative')",
+            name="ck_experience_slots_status",
+        ),
+    )
 
     id: Mapped[str] = mapped_column(String(36), primary_key=True, default=lambda: str(uuid4()))
     experience_id: Mapped[str] = mapped_column(ForeignKey("experiences.id", ondelete="CASCADE"), index=True)
@@ -80,42 +162,135 @@ class ExperienceSlot(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow, onupdate=utcnow)
     experience: Mapped[Experience] = relationship(back_populates="slots")
+    itinerary_stops: Mapped[list["ItineraryStop"]] = relationship(back_populates="slot")
+
+
+class IntentSimilarity(Base):
+    __tablename__ = "intent_similarities"
+    __table_args__ = (
+        CheckConstraint("experience_a_id < experience_b_id", name="ck_similarity_canonical_pair"),
+        CheckConstraint("semantic_similarity BETWEEN 0 AND 1", name="ck_similarity_semantic_range"),
+        CheckConstraint("tag_overlap_score BETWEEN 0 AND 1", name="ck_similarity_tag_range"),
+        CheckConstraint("final_score BETWEEN 0 AND 1", name="ck_similarity_final_range"),
+    )
+
+    experience_a_id: Mapped[str] = mapped_column(ForeignKey("experiences.id", ondelete="CASCADE"), primary_key=True)
+    experience_b_id: Mapped[str] = mapped_column(ForeignKey("experiences.id", ondelete="CASCADE"), primary_key=True)
+    semantic_similarity: Mapped[float] = mapped_column(Float)
+    tag_overlap_score: Mapped[float] = mapped_column(Float)
+    final_score: Mapped[float] = mapped_column(Float)
+    is_human_reviewed: Mapped[bool] = mapped_column(Boolean, default=False)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow, onupdate=utcnow)
+    experience_a: Mapped[Experience] = relationship(foreign_keys=[experience_a_id], back_populates="similarities_as_a")
+    experience_b: Mapped[Experience] = relationship(foreign_keys=[experience_b_id], back_populates="similarities_as_b")
 
 
 class Itinerary(Base):
     __tablename__ = "itineraries"
 
     id: Mapped[str] = mapped_column(String(36), primary_key=True, default=lambda: str(uuid4()))
-    version: Mapped[int] = mapped_column(Integer, default=1)
+    user_session_id: Mapped[str | None] = mapped_column(String(128), nullable=True, index=True)
+    city: Mapped[str] = mapped_column(String(100), default="Ho Chi Minh City")
+    planned_date: Mapped[date | None] = mapped_column(Date, nullable=True)
+    start_time: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    return_deadline: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     group_size: Mapped[int] = mapped_column(Integer)
-    budget_vnd: Mapped[int] = mapped_column(Integer)
+    budget_vnd: Mapped[int] = mapped_column(BigInteger)
+    travel_mode: Mapped[str] = mapped_column(String(24), default="driving")
+    target_intents: Mapped[dict] = mapped_column(JSON_DOCUMENT, default=dict)
+    current_version: Mapped[int] = mapped_column(Integer, default=1)
+    # Legacy fields remain populated for current API responses and planner behavior.
+    version: Mapped[int] = mapped_column(Integer, default=1)
     start_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
     end_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
     status: Mapped[str] = mapped_column(String(24), default=ItineraryStatus.DRAFT.value)
-    constraints: Mapped[dict] = mapped_column(JSON, default=dict)
-    estimated_cost_vnd: Mapped[int] = mapped_column(Integer, default=0)
+    constraints: Mapped[dict] = mapped_column(JSON_DOCUMENT, default=dict)
+    estimated_cost_vnd: Mapped[int] = mapped_column(BigInteger, default=0)
     data_mode: Mapped[str] = mapped_column(String(24), default="simulated")
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow, onupdate=utcnow)
-    stops: Mapped[list["ItineraryStop"]] = relationship(back_populates="itinerary", cascade="all, delete-orphan", order_by="ItineraryStop.position")
+    stops: Mapped[list["ItineraryStop"]] = relationship(
+        back_populates="itinerary", cascade="all, delete-orphan", order_by="ItineraryStop.stop_order"
+    )
+    versions: Mapped[list["ItineraryVersion"]] = relationship(back_populates="itinerary", cascade="all, delete-orphan")
+    decision_logs: Mapped[list["DecisionLog"]] = relationship(back_populates="itinerary", cascade="all, delete-orphan")
+    feedbacks: Mapped[list["Feedback"]] = relationship(back_populates="itinerary", cascade="all, delete-orphan")
 
 
 class ItineraryStop(Base):
     __tablename__ = "itinerary_stops"
+    __table_args__ = (UniqueConstraint("itinerary_id", "stop_order", name="uq_itinerary_stop_order"),)
 
     id: Mapped[str] = mapped_column(String(36), primary_key=True, default=lambda: str(uuid4()))
     itinerary_id: Mapped[str] = mapped_column(ForeignKey("itineraries.id", ondelete="CASCADE"), index=True)
     experience_id: Mapped[str] = mapped_column(ForeignKey("experiences.id", ondelete="RESTRICT"), index=True)
     slot_id: Mapped[str] = mapped_column(ForeignKey("experience_slots.id", ondelete="RESTRICT"), index=True)
-    position: Mapped[int] = mapped_column(Integer)
+    poi_id: Mapped[str] = mapped_column(ForeignKey("pois.id", ondelete="RESTRICT"), index=True)
+    stop_order: Mapped[int] = mapped_column(Integer)
     arrival_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    departure_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    wait_duration_min: Mapped[int] = mapped_column(Integer, default=0)
+    activity_duration_min: Mapped[int] = mapped_column(Integer, default=0)
+    cost_vnd: Mapped[int] = mapped_column(BigInteger)
+    status: Mapped[str] = mapped_column(String(24), default="planned")
+    is_locked: Mapped[bool] = mapped_column(Boolean, default=False)
+    # Compatibility columns from the first project schema.
+    position: Mapped[int] = mapped_column(Integer)
     start_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
     end_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
-    cost_vnd: Mapped[int] = mapped_column(Integer)
     locked: Mapped[bool] = mapped_column(Boolean, default=False)
     itinerary: Mapped[Itinerary] = relationship(back_populates="stops")
     experience: Mapped[Experience] = relationship()
-    slot: Mapped[ExperienceSlot] = relationship()
+    slot: Mapped[ExperienceSlot] = relationship(back_populates="itinerary_stops")
+    poi: Mapped[POI] = relationship(back_populates="stops")
+
+
+class ItineraryVersion(Base):
+    __tablename__ = "itinerary_versions"
+    __table_args__ = (UniqueConstraint("itinerary_id", "version_number", name="uq_itinerary_version_number"),)
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=lambda: str(uuid4()))
+    itinerary_id: Mapped[str] = mapped_column(ForeignKey("itineraries.id", ondelete="CASCADE"), index=True)
+    version_number: Mapped[int] = mapped_column(Integer)
+    stops_snapshot: Mapped[list[dict]] = mapped_column(JSON_DOCUMENT, default=list)
+    total_cost_vnd: Mapped[int] = mapped_column(BigInteger, default=0)
+    total_travel_time_s: Mapped[int] = mapped_column(Integer, default=0)
+    preserved_intents_ratio: Mapped[float | None] = mapped_column(Float, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+    itinerary: Mapped[Itinerary] = relationship(back_populates="versions")
+
+
+class Event(Base):
+    __tablename__ = "events"
+    __table_args__ = (
+        CheckConstraint("event_type IN ('SLOT_CANCELLED', 'WEATHER_ALERT')", name="ck_events_event_type"),
+        CheckConstraint("target_type IN ('experience_slot', 'poi')", name="ck_events_target_type"),
+        CheckConstraint("status IN ('active', 'resolved')", name="ck_events_status"),
+    )
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=lambda: str(uuid4()))
+    event_type: Mapped[str] = mapped_column(String(40), index=True)
+    target_type: Mapped[str] = mapped_column(String(40))
+    target_id: Mapped[str] = mapped_column(String(36), index=True)
+    valid_until: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    status: Mapped[str] = mapped_column(String(24), default="active", index=True)
+    event_metadata: Mapped[dict] = mapped_column("metadata", JSON_DOCUMENT, default=dict)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+    decision_logs: Mapped[list["DecisionLog"]] = relationship(back_populates="trigger_event")
+
+
+class Feedback(Base):
+    """Minimal feedback table: the team ERD shows this relation but no fields."""
+
+    __tablename__ = "feedbacks"
+    __table_args__ = (CheckConstraint("rating IS NULL OR rating BETWEEN 1 AND 5", name="ck_feedback_rating_range"),)
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=lambda: str(uuid4()))
+    itinerary_id: Mapped[str] = mapped_column(ForeignKey("itineraries.id", ondelete="CASCADE"), index=True)
+    rating: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    comment: Mapped[str | None] = mapped_column(Text, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+    itinerary: Mapped[Itinerary] = relationship(back_populates="feedbacks")
 
 
 class Evidence(Base):
@@ -137,8 +312,17 @@ class DecisionLog(Base):
 
     id: Mapped[str] = mapped_column(String(36), primary_key=True, default=lambda: str(uuid4()))
     itinerary_id: Mapped[str] = mapped_column(ForeignKey("itineraries.id", ondelete="CASCADE"), index=True)
+    trigger_event_id: Mapped[str | None] = mapped_column(ForeignKey("events.id", ondelete="SET NULL"), nullable=True, index=True)
+    base_version: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    new_version: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    preserved_intents: Mapped[list[str]] = mapped_column(TEXT_ARRAY, default=list)
+    lost_intents: Mapped[list[str]] = mapped_column(TEXT_ARRAY, default=list)
+    comparative_metrics: Mapped[dict] = mapped_column(JSON_DOCUMENT, default=dict)
+    explanation_vi: Mapped[str | None] = mapped_column(Text, nullable=True)
     snapshot_id: Mapped[str | None] = mapped_column(String(36), nullable=True)
-    reason_codes: Mapped[list[str]] = mapped_column(JSON, default=list)
-    rejected_candidates: Mapped[list[dict]] = mapped_column(JSON, default=list)
+    reason_codes: Mapped[list[str]] = mapped_column(TEXT_ARRAY, default=list)
+    rejected_candidates: Mapped[list[dict]] = mapped_column(JSON_DOCUMENT, default=list)
     model_version: Mapped[str] = mapped_column(String(80), default="heuristic-v1")
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+    itinerary: Mapped[Itinerary] = relationship(back_populates="decision_logs")
+    trigger_event: Mapped[Event | None] = relationship(back_populates="decision_logs")

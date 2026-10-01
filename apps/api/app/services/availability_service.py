@@ -6,7 +6,7 @@ class AvailabilityService:
     """Applies reported slot/capacity semantics without treating unknown as sold out."""
 
     def can_fit(self, slot: ExperienceSlot, group_size: int) -> bool:
-        if slot.status in {SlotStatus.UNAVAILABLE.value, SlotStatus.CANCELLED.value}:
+        if slot.status in {SlotStatus.FULL.value, SlotStatus.UNAVAILABLE.value, SlotStatus.CANCELLED.value}:
             return False
         if slot.available_reported == 0:
             return False

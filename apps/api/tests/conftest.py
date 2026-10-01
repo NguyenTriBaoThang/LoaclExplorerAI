@@ -5,6 +5,7 @@ from fastapi.testclient import TestClient
 from sqlalchemy import create_engine
 from sqlalchemy.orm import Session, sessionmaker
 from sqlalchemy.pool import StaticPool
+from geoalchemy2.elements import WKTElement
 
 from app.db.base import Base
 from app.db.session import get_db
@@ -37,7 +38,7 @@ def client(db_session: Session) -> Generator[TestClient, None, None]:
 @pytest.fixture
 def sample_experience(db_session: Session) -> Experience:
     provider = Provider(name="Demo provider", status="simulated")
-    poi = POI(name="Demo craft point", description="Synthetic", latitude=10.775, longitude=106.7, category="handicraft", address="Demo address", verification_status="simulated")
+    poi = POI(name="Demo craft point", description="Synthetic", latitude=10.775, longitude=106.7, geom=WKTElement("POINT(106.7 10.775)", srid=4326), category="handicraft", address="Demo address", verification_status="simulated")
     experience = Experience(
         poi=poi, provider=provider, name="Paper workshop", description="Simulated workshop",
         intent_tags=["handicraft", "hands_on"], duration_min=60, indoor=True,
@@ -48,7 +49,7 @@ def sample_experience(db_session: Session) -> Experience:
     return experience
 
 
-def add_slot(db_session: Session, experience: Experience, start: str = "2026-10-01T02:00:00+00:00", available: int | None = 4, status: str = "available") -> ExperienceSlot:
+def add_slot(db_session: Session, experience: Experience, start: str = "2030-10-01T02:00:00+00:00", available: int | None = 4, status: str = "available") -> ExperienceSlot:
     from datetime import datetime
 
     start_at = datetime.fromisoformat(start)
