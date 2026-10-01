@@ -1,0 +1,17 @@
+{
+  "suite": "local-explorer-ai-system-prompts",
+  "version": "3.0.0",
+  "prd_version": "3.0",
+  "effective_date": "2026-09-22",
+  "language": "vi",
+  "prompt_ids": [
+    "CONVERSATION_PARSER",
+    "EXPERIENCE_TAGGER",
+    "INTENT_SIMILARITY",
+    "REPLAN_ADVISOR",
+    "XAI_EXPLANATION",
+    "PROVIDER_ASSISTANT",
+    "FEEDBACK_LABELER",
+    "WEATHER_AQI_ADVISOR"
+  ]
+}

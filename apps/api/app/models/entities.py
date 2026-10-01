@@ -120,6 +120,9 @@ class Experience(Base):
     intent_tags: Mapped[list[str]] = mapped_column(TEXT_ARRAY, default=list)
     is_hands_on: Mapped[bool] = mapped_column(Boolean, default=False)
     is_indoor: Mapped[bool] = mapped_column(Boolean, default=True)
+    primary_intent: Mapped[str | None] = mapped_column(String(40), nullable=True)
+    weather_sensitivity: Mapped[str | None] = mapped_column(String(24), nullable=True)
+    tagger_prompt_version: Mapped[str | None] = mapped_column(String(20), nullable=True)
     duration_min: Mapped[int] = mapped_column(Integer)
     price_basis: Mapped[str] = mapped_column(String(24), default=PriceBasis.PER_PERSON.value)
     price_vnd: Mapped[int] = mapped_column(BigInteger, default=0)
@@ -179,6 +182,8 @@ class IntentSimilarity(Base):
     semantic_similarity: Mapped[float] = mapped_column(Float)
     tag_overlap_score: Mapped[float] = mapped_column(Float)
     final_score: Mapped[float] = mapped_column(Float)
+    can_substitute_purpose: Mapped[bool] = mapped_column(Boolean, default=False)
+    prompt_version: Mapped[str | None] = mapped_column(String(20), nullable=True)
     is_human_reviewed: Mapped[bool] = mapped_column(Boolean, default=False)
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow, onupdate=utcnow)
     experience_a: Mapped[Experience] = relationship(foreign_keys=[experience_a_id], back_populates="similarities_as_a")
@@ -280,15 +285,24 @@ class Event(Base):
 
 
 class Feedback(Base):
-    """Minimal feedback table: the team ERD shows this relation but no fields."""
+    """User feedback and the PRD 3.0 rubric label used to prepare ML samples."""
 
     __tablename__ = "feedbacks"
-    __table_args__ = (CheckConstraint("rating IS NULL OR rating BETWEEN 1 AND 5", name="ck_feedback_rating_range"),)
+    __table_args__ = (
+        CheckConstraint("rating IS NULL OR rating BETWEEN 1 AND 5", name="ck_feedback_rating_range"),
+        CheckConstraint("relevance_grade IS NULL OR relevance_grade BETWEEN 0 AND 3", name="ck_feedback_relevance_range"),
+        CheckConstraint("objective_achieved_ratio IS NULL OR objective_achieved_ratio BETWEEN 0 AND 1", name="ck_feedback_objective_ratio"),
+    )
 
     id: Mapped[str] = mapped_column(String(36), primary_key=True, default=lambda: str(uuid4()))
     itinerary_id: Mapped[str] = mapped_column(ForeignKey("itineraries.id", ondelete="CASCADE"), index=True)
     rating: Mapped[int | None] = mapped_column(Integer, nullable=True)
     comment: Mapped[str | None] = mapped_column(Text, nullable=True)
+    relevance_grade: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    rubric_justification_vi: Mapped[str | None] = mapped_column(Text, nullable=True)
+    objective_achieved_ratio: Mapped[float | None] = mapped_column(Float, nullable=True)
+    is_usable_for_training: Mapped[bool | None] = mapped_column(Boolean, nullable=True)
+    labeler_prompt_version: Mapped[str | None] = mapped_column(String(20), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
     itinerary: Mapped[Itinerary] = relationship(back_populates="feedbacks")
 

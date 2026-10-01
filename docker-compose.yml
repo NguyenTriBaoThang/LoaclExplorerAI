@@ -34,6 +34,12 @@ services:
       REDIS_URL: redis://redis:6379/0
       CORS_ORIGINS: http://localhost:${WEB_PORT:-5173}
       ROUTING_PROVIDER: mock
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+      OPENAI_BASE_URL: ${OPENAI_BASE_URL:-https://api.openai.com/v1}
+      OPENAI_MODEL: ${OPENAI_MODEL:-gpt-4o-mini}
+      OPENAI_TIMEOUT_SECONDS: ${OPENAI_TIMEOUT_SECONDS:-30}
+      ADMIN_API_KEY: ${ADMIN_API_KEY:-}
+      APP_SIGNING_SECRET: ${APP_SIGNING_SECRET:-}
     ports:
       - "${API_PORT:-8000}:8000"
     depends_on:

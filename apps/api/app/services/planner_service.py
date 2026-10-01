@@ -6,7 +6,7 @@ from sqlalchemy.orm import Session, joinedload, selectinload
 
 from app.adapters.routing.provider import MockRoutingProvider
 from app.core.config import settings
-from app.core.enums import ItineraryStatus, PriceBasis
+from app.core.enums import ItineraryStatus, PriceBasis, normalize_intent_tag
 from app.models.entities import DecisionLog, Experience, ExperienceSlot, Itinerary, ItineraryStop, ItineraryVersion
 from app.repositories.experience_repository import ExperienceRepository
 from app.schemas.planner import PlanRequest
@@ -129,8 +129,10 @@ class PlannerService:
         if not chosen or any(item not in chosen_experience_ids for item in request.locked_experience_ids):
             raise NoFeasiblePlan("No itinerary satisfies time, capacity, and budget constraints")
 
-        preserved = sorted({tag for item in chosen for tag in item["experience"].intent_tags if request.intent_weights.get(tag, 0) > 0})
-        lost = sorted(tag for tag, weight in request.intent_weights.items() if weight > 0 and tag not in preserved)
+        requested_intents = {tag for tag, weight in request.intent_weights.items() if weight > 0}
+        provided_intents = {normalize_intent_tag(tag) for item in chosen for tag in item["experience"].intent_tags}
+        preserved = sorted(tag for tag in requested_intents if normalize_intent_tag(tag) in provided_intents)
+        lost = sorted(requested_intents - set(preserved))
         status = ItineraryStatus.TENTATIVE.value if unknown_capacity else ItineraryStatus.FEASIBLE.value
         itinerary = Itinerary(
             id=str(uuid4()), group_size=request.group_size, budget_vnd=request.budget_vnd,
@@ -224,10 +226,12 @@ class PlannerService:
         if any(not stop["availability_known"] for stop in stops):
             reasons.append("CAPACITY_UNKNOWN")
         intents = itinerary.constraints.get("intent_weights", {})
-        preserved = sorted({tag for stop in itinerary.stops for tag in stop.experience.intent_tags if intents.get(tag, 0) > 0})
+        requested_intents = {tag for tag, weight in intents.items() if weight > 0}
+        provided_intents = {normalize_intent_tag(tag) for stop in itinerary.stops for tag in stop.experience.intent_tags}
+        preserved = sorted(tag for tag in requested_intents if normalize_intent_tag(tag) in provided_intents)
         return {
             "request_id": itinerary.id, "itinerary_id": itinerary.id, "data_mode": itinerary.data_mode,
             "data_as_of": itinerary.created_at, "feasibility_status": itinerary.status,
             "estimated_cost_vnd": itinerary.estimated_cost_vnd, "total_travel_min": travel, "stops": stops,
-            "routes": routes, "explanation": self.explainer.explain(reasons, preserved, sorted(tag for tag, weight in intents.items() if weight > 0 and tag not in preserved)),
+            "routes": routes, "explanation": self.explainer.explain(reasons, preserved, sorted(requested_intents - set(preserved))),
         }

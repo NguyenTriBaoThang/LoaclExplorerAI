@@ -18,7 +18,7 @@ class RoutingProvider(Protocol):
 class MockRoutingProvider:
     """Straight-line distance with an assumed speed; this is not a real route or traffic feed."""
 
-    speeds_kmh = {"walking": 4.5, "bicycling": 14.0, "driving": 20.0, "transit": 16.0}
+    speeds_kmh = {"walking": 4.5, "bicycling": 14.0, "driving": 20.0, "motorcycle": 25.0, "car": 20.0, "transit": 16.0}
 
     def get_route(self, origin: tuple[float, float], destination: tuple[float, float], mode: str) -> RouteEstimate:
         lat1, lon1 = map(radians, origin)
