@@ -1,6 +1,18 @@
 from enum import StrEnum
 
 
+INTENT_TAG_ALIASES = {
+    "thủ_công": "handicraft",
+    "ẩm_thực": "food",
+    "văn_hóa": "culture",
+    "thư_giãn": "relaxation",
+}
+
+
+def normalize_intent_tag(value: str) -> str:
+    return INTENT_TAG_ALIASES.get(value, value)
+
+
 class VerificationStatus(StrEnum):
     VERIFIED = "verified"
     UNVERIFIED = "unverified"

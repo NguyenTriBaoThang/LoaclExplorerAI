@@ -56,6 +56,11 @@ class ExperienceRead(ORMModel):
     poi_id: str
     provider_id: str
     intent_tags: list[str]
+    is_hands_on: bool
+    is_indoor: bool
+    primary_intent: str | None = None
+    weather_sensitivity: str | None = None
+    tagger_prompt_version: str | None = None
     duration_min: int
     indoor: bool
     price_basis: str

@@ -11,7 +11,7 @@ class PlanRequest(BaseModel):
     end_at: datetime
     group_size: int = Field(ge=1, le=50)
     budget_vnd: int = Field(ge=0)
-    transport_mode: Literal["walking", "bicycling", "driving", "transit"] = "driving"
+    transport_mode: Literal["walking", "bicycling", "driving", "motorcycle", "car", "transit"] = "driving"
     intent_weights: dict[str, float] = Field(default_factory=dict)
     locked_experience_ids: list[str] = Field(default_factory=list)
 
