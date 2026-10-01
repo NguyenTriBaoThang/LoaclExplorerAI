@@ -7,7 +7,7 @@ from sqlalchemy.orm import Session, joinedload, selectinload
 from app.adapters.routing.provider import MockRoutingProvider
 from app.core.config import settings
 from app.core.enums import ItineraryStatus, PriceBasis
-from app.models.entities import DecisionLog, Experience, ExperienceSlot, Itinerary, ItineraryStop
+from app.models.entities import DecisionLog, Experience, ExperienceSlot, Itinerary, ItineraryStop, ItineraryVersion
 from app.repositories.experience_repository import ExperienceRepository
 from app.schemas.planner import PlanRequest
 from app.services.explanation_service import ExplanationService
@@ -135,22 +135,45 @@ class PlannerService:
         itinerary = Itinerary(
             id=str(uuid4()), group_size=request.group_size, budget_vnd=request.budget_vnd,
             start_at=start_at, end_at=end_at, status=status,
+            planned_date=start_at.date(), start_time=start_at, return_deadline=end_at,
+            travel_mode=request.transport_mode, target_intents=request.intent_weights, current_version=1,
             constraints={"transport_mode": request.transport_mode, "intent_weights": request.intent_weights, "locked_experience_ids": request.locked_experience_ids},
             estimated_cost_vnd=total_cost, data_mode="simulated",
         )
         self.db.add(itinerary)
         self.db.flush()
         response_stops = []
+        version_snapshot = []
         for position, item in enumerate(chosen, start=1):
             experience, slot = item["experience"], item["slot"]
             stop = ItineraryStop(
-                id=str(uuid4()), itinerary_id=itinerary.id, experience_id=experience.id, slot_id=slot.id, position=position,
+                id=str(uuid4()), itinerary_id=itinerary.id, experience_id=experience.id, slot_id=slot.id,
+                poi_id=experience.poi_id, stop_order=position, position=position,
                 arrival_at=item["arrival"], start_at=as_aware(slot.start_at), end_at=as_aware(slot.end_at),
-                cost_vnd=item["cost"], locked=item["locked"],
+                departure_at=as_aware(slot.end_at), wait_duration_min=0,
+                activity_duration_min=experience.duration_min,
+                cost_vnd=item["cost"], status="planned", is_locked=item["locked"], locked=item["locked"],
             )
             self.db.add(stop)
             response_stops.append(self._stop_dict(stop, experience, slot, position))
-        self.db.add(DecisionLog(itinerary_id=itinerary.id, reason_codes=sorted(reason_codes), rejected_candidates=[], model_version="heuristic-v1"))
+            version_snapshot.append({
+                "stop_id": stop.id, "stop_order": position, "poi_id": experience.poi_id,
+                "experience_id": experience.id, "slot_id": slot.id,
+                "arrival_at": stop.arrival_at.isoformat(), "departure_at": stop.departure_at.isoformat(),
+                "cost_vnd": stop.cost_vnd, "is_locked": stop.is_locked,
+            })
+        self.db.add(ItineraryVersion(
+            itinerary_id=itinerary.id, version_number=1, stops_snapshot=version_snapshot,
+            total_cost_vnd=total_cost, total_travel_time_s=total_travel * 60,
+            preserved_intents_ratio=(len(preserved) / sum(weight > 0 for weight in request.intent_weights.values())) if any(weight > 0 for weight in request.intent_weights.values()) else 1.0,
+        ))
+        self.db.add(DecisionLog(
+            itinerary_id=itinerary.id, base_version=0, new_version=1,
+            preserved_intents=preserved, lost_intents=lost,
+            comparative_metrics={"estimated_cost_vnd": total_cost, "total_travel_time_s": total_travel * 60},
+            explanation_vi="Lịch trình được tạo theo ngân sách, thời gian và mục đích chuyến đi đã chọn.",
+            reason_codes=sorted(reason_codes), rejected_candidates=[], model_version="heuristic-v1",
+        ))
         self.db.commit()
         return {
             "request_id": itinerary.id,

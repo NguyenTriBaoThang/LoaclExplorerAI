@@ -8,6 +8,9 @@ class VerificationStatus(StrEnum):
 
 
 class SlotStatus(StrEnum):
+    OPEN = "open"
+    FULL = "full"
+    # Kept for records created by the original project schema.
     AVAILABLE = "available"
     UNAVAILABLE = "unavailable"
     TENTATIVE = "tentative"
@@ -21,6 +24,10 @@ class DataMode(StrEnum):
 
 
 class ItineraryStatus(StrEnum):
+    CONFIRMED = "confirmed"
+    AFFECTED = "affected"
+    RE_PLANNED = "re_planned"
+    # Lifecycle states used by the existing planner/API.
     DRAFT = "draft"
     FEASIBLE = "feasible"
     TENTATIVE = "tentative"

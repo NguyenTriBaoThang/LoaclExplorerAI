@@ -20,7 +20,7 @@ export function ExperienceCard({
   selected?: boolean
   onSelect: () => void
 }) {
-  const slot = experience.slots.find((item) => item.status !== 'unavailable' && item.status !== 'cancelled')
+  const slot = experience.slots.find((item) => !['full', 'unavailable', 'cancelled'].includes(item.status))
   const time = slot
     ? new Intl.DateTimeFormat('vi-VN', {
         hour: '2-digit',

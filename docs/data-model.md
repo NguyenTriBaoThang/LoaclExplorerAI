@@ -1,88 +1,180 @@
 # Data model
 
+This schema incorporates the team's PostgreSQL 15+ / PostGIS ERD. PostgreSQL uses
+`text[]` for tag/reason lists, `jsonb` for documents, `bigint` for VND amounts,
+and `geometry(Point, 4326)` plus a GiST index for POI locations. SQLite is used
+only by the API test suite and maps the same collection fields to JSON.
+
 ```mermaid
 erDiagram
-    PROVIDER ||--o{ EXPERIENCE : offers
-    POI ||--o{ EXPERIENCE : hosts
-    EXPERIENCE ||--o{ EXPERIENCE_SLOT : schedules
-    ITINERARY ||--o{ ITINERARY_STOP : contains
-    EXPERIENCE ||--o{ ITINERARY_STOP : selected_as
-    EXPERIENCE_SLOT ||--o{ ITINERARY_STOP : uses
-    ITINERARY ||--o{ DECISION_LOG : explains
+    PROVIDERS ||--o{ EXPERIENCES : offers
+    POIS ||--o{ EXPERIENCES : hosts
+    EXPERIENCES ||--o{ EXPERIENCE_SLOTS : schedules
+    EXPERIENCES ||--o{ INTENT_SIMILARITIES : similarity_a
+    EXPERIENCES ||--o{ INTENT_SIMILARITIES : similarity_b
+    ITINERARIES ||--o{ ITINERARY_STOPS : contains
+    ITINERARIES ||--o{ ITINERARY_VERSIONS : snapshots
+    ITINERARIES ||--o{ DECISION_LOGS : explains
+    ITINERARIES ||--o{ FEEDBACKS : receives
+    EXPERIENCE_SLOTS ||--o{ ITINERARY_STOPS : uses
+    POIS ||--o{ ITINERARY_STOPS : location
+    EXPERIENCES ||--o{ ITINERARY_STOPS : activity
+    EVENTS o|--o{ DECISION_LOGS : triggers
 
-    PROVIDER {
+    PROVIDERS {
       uuid id PK
-      string name
-      string status
-      string contact_phone
-      string contact_email
-      datetime created_at
+      varchar name
+      varchar slug UK
+      varchar contact_phone
+      varchar address
+      boolean is_active
+      varchar verification_status
+      varchar portal_access_key
     }
-    POI {
-      uuid id PK
-      string name
-      float latitude
-      float longitude
-      geography geom
-      string category
-      string verification_status
+    POIS {
+      varchar id PK
+      varchar name
+      varchar district
+      varchar address
+      double latitude
+      double longitude
+      geometry geom
+      varchar category
+      text source_attribution
+      boolean is_in_pilot_polygon
+      jsonb image_urls
     }
-    EXPERIENCE {
-      uuid id PK
-      uuid poi_id FK
+    EXPERIENCES {
+      varchar id PK
+      varchar poi_id FK
       uuid provider_id FK
-      string name
-      json intent_tags
-      int duration_min
-      string price_basis
-      int price_vnd
+      varchar title
+      text description
+      text_array intent_tags
+      boolean is_hands_on
+      boolean is_indoor
+      integer duration_min
+      bigint price_vnd
+      varchar verification_status
     }
-    EXPERIENCE_SLOT {
+    EXPERIENCE_SLOTS {
       uuid id PK
-      uuid experience_id FK
-      datetime start_at
-      datetime end_at
-      int capacity_total
-      int available_reported
-      string status
-      int version
+      varchar experience_id FK
+      timestamptz start_at
+      timestamptz end_at
+      integer capacity_total
+      integer available_reported
+      varchar status
+      integer version
+      timestamptz expires_at
     }
-    ITINERARY {
+    INTENT_SIMILARITIES {
+      varchar experience_a_id PK,FK
+      varchar experience_b_id PK,FK
+      float semantic_similarity
+      float tag_overlap_score
+      float final_score
+      boolean is_human_reviewed
+    }
+    ITINERARIES {
       uuid id PK
-      int version
-      int group_size
-      int budget_vnd
-      datetime start_at
-      datetime end_at
-      string status
-      json constraints
+      varchar user_session_id
+      varchar city
+      date planned_date
+      timestamptz start_time
+      timestamptz return_deadline
+      integer group_size
+      bigint budget_vnd
+      varchar travel_mode
+      jsonb target_intents
+      varchar status
+      integer current_version
     }
-    ITINERARY_STOP {
+    ITINERARY_STOPS {
       uuid id PK
       uuid itinerary_id FK
-      uuid experience_id FK
+      integer stop_order
       uuid slot_id FK
-      int position
-      datetime arrival_at
-      int cost_vnd
+      varchar poi_id FK
+      varchar experience_id FK
+      timestamptz arrival_at
+      timestamptz departure_at
+      integer wait_duration_min
+      integer activity_duration_min
+      bigint cost_vnd
+      boolean is_locked
+      varchar status
     }
-    DECISION_LOG {
+    ITINERARY_VERSIONS {
       uuid id PK
       uuid itinerary_id FK
-      json reason_codes
-      json rejected_candidates
-      string model_version
+      integer version_number
+      jsonb stops_snapshot
+      bigint total_cost_vnd
+      integer total_travel_time_s
+      float preserved_intents_ratio
+    }
+    EVENTS {
+      uuid id PK
+      varchar event_type
+      varchar target_type
+      varchar target_id
+      timestamptz valid_until
+      varchar status
+      jsonb metadata
+    }
+    DECISION_LOGS {
+      uuid id PK
+      uuid itinerary_id FK
+      uuid trigger_event_id FK
+      integer base_version
+      integer new_version
+      text_array preserved_intents
+      text_array lost_intents
+      text_array reason_codes
+      jsonb comparative_metrics
+      text explanation_vi
+    }
+    FEEDBACKS {
+      uuid id PK
+      uuid itinerary_id FK
+      integer rating
+      text comment
+      timestamptz created_at
     }
     EVIDENCE {
       uuid id PK
-      string source_uri
-      string source_type
-      string license
-      datetime verified_at
-      datetime expires_at
+      varchar source_uri
+      varchar source_type
+      varchar license
+      timestamptz verified_at
+      timestamptz expires_at
     }
 ```
 
-Schema core dùng UUID dạng chuỗi, timestamp có timezone, giá VND dạng integer và status dạng chuỗi có giá trị enum dùng chung trong ứng dụng. `pois.geom` là PostGIS `geography(Point,4326)` có GIST index; API hiện dùng lat/lon, chưa có truy vấn radius.
+`intent_similarities` stores each pair once (`experience_a_id < experience_b_id`)
+and constrains all three scores to `[0, 1]`. Slot status accepts the team's
+`open | full | cancelled` values; legacy `available | unavailable | tentative`
+values remain supported for existing API/demo data. `feedbacks` is intentionally
+minimal because the team's ERD references it but does not define its columns.
 
-`available_reported`: `null` = chưa xác định; `0` = hết chỗ; số dương = số chỗ báo cáo. Dữ liệu seed xen kẽ slot được báo cáo và slot tentative để UI thể hiện bất định.
+The first project schema used `name`, `indoor`, `position`, `start_at`/`end_at`,
+and other fields that current API clients depend on. These columns remain as
+compatibility fields alongside the team's canonical `title`, `is_indoor`,
+`stop_order`, `departure_at`, and other fields. The planner writes both forms.
+Identifiers remain string-backed to preserve existing UUID values while also
+accepting the human-readable POI/experience IDs in the team's design.
+
+Migration `0002_team_database_architecture` adds the missing tables and columns,
+backfills existing rows, upgrades VND columns to `bigint`, converts tag/reason
+lists to PostgreSQL arrays, and converts POI geography to geometry. Migration
+`0001_initial` is kept as a frozen baseline so future ORM changes cannot alter
+the historical migration.
+
+The PRD lists 32 HCMC POI names grouped into eight areas, but does not provide
+their coordinates, addresses, source attribution, provider links, activities,
+or schedule data. Therefore those names are not inserted as operational POI
+rows with fabricated locations. The existing seed remains explicitly synthetic;
+the supplied POI catalogue can be loaded once its source data is completed and
+verified. The eight named areas are represented by `pois.district` rather than
+a separate region table, matching the ERD.
