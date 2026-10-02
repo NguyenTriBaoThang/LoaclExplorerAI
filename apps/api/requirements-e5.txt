@@ -1,0 +1,2 @@
+# Optional CPU E5 semantic-search runtime. Install separately from requirements.txt.
+sentence-transformers>=5,<7

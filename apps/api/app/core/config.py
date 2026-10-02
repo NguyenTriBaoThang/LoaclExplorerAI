@@ -15,6 +15,17 @@ class Settings(BaseSettings):
     openai_timeout_seconds: float = 30.0
     admin_api_key: str | None = None
     app_signing_secret: str | None = None
+    auth_secret: str | None = None
+    session_ttl_seconds: int = 7200
+    google_client_id: str | None = None
+    google_client_secret: str | None = None
+    google_redirect_uri: str = "http://localhost:8000/api/auth/google/callback"
+    web_app_url: str = "http://localhost:5173"
+    demo_admin_email: str = "localexplorerai@admin.com"
+    demo_admin_password: str | None = None
+    demo_traveler_email: str = "baothang@gmail.com"
+    demo_traveler_password: str | None = None
+    e5_model_path: str | None = None
 
     model_config = SettingsConfigDict(env_file=".env", extra="ignore")
 

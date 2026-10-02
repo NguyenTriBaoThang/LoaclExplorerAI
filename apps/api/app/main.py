@@ -6,7 +6,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
-from app.api.routes import ai, catalog, chat, health, planner
+from app.api.routes import admin, ai, auth, catalog, chat, health, planner, provider
 from app.adapters.llm.provider import LLMNotConfigured, LLMProviderError
 from app.core.config import settings
 from app.services.prompt_service import InvalidStructuredOutput
@@ -61,6 +61,9 @@ def root():
 
 
 app.include_router(health.router)
+app.include_router(auth.router)
+app.include_router(provider.router)
+app.include_router(admin.router)
 app.include_router(catalog.router)
 app.include_router(planner.router)
 app.include_router(chat.router)

@@ -11,7 +11,7 @@ import {
   RotateCcw,
 } from 'lucide-react'
 import { Link, useSearchParams } from 'react-router-dom'
-import { apiErrorMessage, getExperiences } from '../api/client'
+import { apiErrorMessage, getExperiences, searchExperiences } from '../api/client'
 import { ExperienceCard } from '../components/experience/ExperienceCard'
 import { MapAdapter } from '../components/map/MapAdapter'
 import { SimulatedBadge } from '../components/common/StatusBadge'
@@ -47,6 +47,11 @@ export function ExplorePage() {
   const [time, setTime] = useState('09:00')
   const [groupSize, setGroupSize] = useState(2)
   const [budget, setBudget] = useState(2000000)
+  const [indoor, setIndoor] = useState('all')
+  const [topic, setTopic] = useState('')
+  const [radiusKm, setRadiusKm] = useState(15)
+  const [slotId, setSlotId] = useState('')
+  const [semantic, setSemantic] = useState(false)
   const [selectedId, setSelectedId] = useState('')
 
   useEffect(() => {
@@ -56,17 +61,27 @@ export function ExplorePage() {
     const from = new Date(`${date}T${time}:00+07:00`).toISOString()
     const to = new Date(`${date}T23:59:59+07:00`).toISOString()
 
-    getExperiences({
+    const params = {
       ...(intent ? { intent } : {}),
+      ...(topic ? { topic } : {}),
+      ...(indoor !== 'all' ? { is_indoor: indoor === 'indoor' } : {}),
       start_at: from,
       end_at: to,
       group_size: groupSize,
       max_price: Math.floor(budget / groupSize),
-    })
+      max_distance_km: radiusKm,
+      center_latitude: 10.7769,
+      center_longitude: 106.7009,
+      ...(slotId ? { slot_id: slotId } : {}),
+    }
+    const request = semantic && search.trim().length >= 2
+      ? searchExperiences(search.trim(), params, true)
+      : getExperiences({ ...params, ...(search.trim() ? { query: search.trim() } : {}) })
+    request
       .then((data) => {
         if (active) {
           setItems(data)
-          if (!selectedId && data[0]) setSelectedId(data[0].id)
+          setSelectedId(current => data.some(item => item.id === current) ? current : (data[0]?.id || ''))
         }
       })
       .catch((reason: unknown) => {
@@ -79,16 +94,16 @@ export function ExplorePage() {
     return () => {
       active = false
     }
-  }, [intent, date, time, groupSize, budget])
+  }, [intent, date, time, groupSize, budget, indoor, topic, radiusKm, slotId, semantic, search])
 
   const visible = useMemo(
     () =>
-      items.filter((item) =>
+      items.filter((item) => semantic || !search.trim() ||
         `${item.name} ${item.description} ${item.poi.name}`
           .toLowerCase()
           .includes(search.toLowerCase())
       ),
-    [items, search]
+    [items, search, semantic]
   )
 
   const points = visible.map((item, index) => ({
@@ -109,6 +124,11 @@ export function ExplorePage() {
     setTime('09:00')
     setGroupSize(2)
     setBudget(2000000)
+    setIndoor('all')
+    setTopic('')
+    setRadiusKm(15)
+    setSlotId('')
+    setSemantic(false)
   }
 
   return (
@@ -225,6 +245,14 @@ export function ExplorePage() {
             <RotateCcw size={16} />
           </button>
         </div>
+      </div>
+
+      <div className="filter-inputs-group" style={{ margin: '12px 0', flexWrap: 'wrap' }}>
+        <label>Chủ đề <input value={topic} onChange={e => setTopic(e.target.value)} placeholder="vd: thủ công" /></label>
+        <label>Không gian <select value={indoor} onChange={e => setIndoor(e.target.value)}><option value="all">Trong/ngoài nhà</option><option value="indoor">Trong nhà</option><option value="outdoor">Ngoài trời</option></select></label>
+        <label>Bán kính từ trung tâm Q.1 (km) <input type="number" min={1} max={100} value={radiusKm} onChange={e => setRadiusKm(Math.max(1, Number(e.target.value)))} /></label>
+        <label>Mã slot <input value={slotId} onChange={e => setSlotId(e.target.value)} placeholder="Tùy chọn" /></label>
+        <label><input type="checkbox" checked={semantic} onChange={e => setSemantic(e.target.checked)} /> Tìm kiếm ngữ nghĩa E5 (chỉ cần câu mô tả ý định)</label>
       </div>
 
       {error && (

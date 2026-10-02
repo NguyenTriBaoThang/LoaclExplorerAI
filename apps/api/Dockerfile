@@ -4,8 +4,10 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1
 
 WORKDIR /app
-COPY requirements.txt ./requirements.txt
-RUN pip install --no-cache-dir -r requirements.txt
+ARG INSTALL_E5=false
+COPY requirements.txt requirements-e5.txt ./
+RUN pip install --no-cache-dir -r requirements.txt \
+    && if [ "$INSTALL_E5" = "true" ]; then pip install --no-cache-dir -r requirements-e5.txt; fi
 COPY . .
 
 EXPOSE 8000

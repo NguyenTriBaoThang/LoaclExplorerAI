@@ -1,7 +1,7 @@
 from datetime import datetime, timezone
 from typing import Literal
 
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, Field, field_validator, model_validator
 
 from app.schemas.common import POIRead
 
@@ -14,6 +14,21 @@ class PlanRequest(BaseModel):
     transport_mode: Literal["walking", "bicycling", "driving", "motorcycle", "car", "transit"] = "driving"
     intent_weights: dict[str, float] = Field(default_factory=dict)
     locked_experience_ids: list[str] = Field(default_factory=list)
+    locked_poi_ids: list[str] = Field(default_factory=list)
+    origin_latitude: float | None = Field(default=None, ge=-90, le=90)
+    origin_longitude: float | None = Field(default=None, ge=-180, le=180)
+    destination_latitude: float | None = Field(default=None, ge=-90, le=90)
+    destination_longitude: float | None = Field(default=None, ge=-180, le=180)
+    origin_label: str | None = Field(default=None, max_length=200)
+    destination_label: str | None = Field(default=None, max_length=200)
+
+    @model_validator(mode="after")
+    def require_coordinate_pairs(self):
+        if (self.origin_latitude is None) != (self.origin_longitude is None):
+            raise ValueError("Provide both origin latitude and longitude")
+        if (self.destination_latitude is None) != (self.destination_longitude is None):
+            raise ValueError("Provide both destination latitude and longitude")
+        return self
 
     @field_validator("start_at", "end_at")
     @classmethod
@@ -25,7 +40,9 @@ class PlanRequest(BaseModel):
 
 class RouteLeg(BaseModel):
     from_experience_id: str | None
-    to_experience_id: str
+    to_experience_id: str | None
+    from_label: str | None = None
+    to_label: str | None = None
     distance_m: int
     duration_min: int
     provider: str = "mock"
@@ -73,6 +90,9 @@ class PlanResponse(BaseModel):
     feasibility_status: str
     estimated_cost_vnd: int
     total_travel_min: int
+    start_at: datetime | None = None
+    return_deadline: datetime | None = None
+    estimated_return_at: datetime | None = None
     stops: list[ItineraryStopRead]
     routes: list[RouteLeg]
     explanation: Explanation
@@ -80,6 +100,13 @@ class PlanResponse(BaseModel):
     @field_validator("data_as_of", mode="before")
     @classmethod
     def require_aware_as_of(cls, value):
+        if isinstance(value, datetime) and (value.tzinfo is None or value.utcoffset() is None):
+            return value.replace(tzinfo=timezone.utc)
+        return value
+
+    @field_validator("start_at", "return_deadline", "estimated_return_at", mode="before")
+    @classmethod
+    def require_aware_trip_times(cls, value):
         if isinstance(value, datetime) and (value.tzinfo is None or value.utcoffset() is None):
             return value.replace(tzinfo=timezone.utc)
         return value

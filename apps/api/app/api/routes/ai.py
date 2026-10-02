@@ -13,10 +13,10 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session, joinedload, selectinload
 
 from app.adapters.llm.provider import StructuredOutputProvider
-from app.api.dependencies import get_llm_provider, get_db, require_admin
+from app.api.dependencies import get_llm_provider, get_db, get_optional_user, require_admin
 from app.core.config import settings
 from app.core.enums import normalize_intent_tag
-from app.models.entities import Event, Experience, ExperienceSlot, Feedback, IntentSimilarity, Itinerary, ItineraryStop, Provider
+from app.models.entities import Event, Experience, ExperienceSlot, Feedback, IntentSimilarity, Itinerary, ItineraryStop, Provider, User
 from app.prompts.registry import catalog
 from app.schemas.ai import (
     ExperienceMetadata,
@@ -39,6 +39,7 @@ from app.services.replanning_service import ReplanningService, aware
 
 router = APIRouter(tags=["AI workflows"])
 LOCAL_TZ = ZoneInfo("Asia/Ho_Chi_Minh")
+_DEVELOPMENT_SIGNING_SECRET = secrets.token_urlsafe(48)
 
 
 @router.get("/api/ai/prompts")
@@ -64,10 +65,14 @@ def _load_slots(db: Session, slot_ids: list[str], lock: bool = False) -> list[Ex
     return sorted(slots, key=lambda slot: aware(slot.start_at))
 
 
-def _provider_auth(db: Session, provider_id: str, access_key: str | None) -> Provider:
+def _provider_auth(db: Session, provider_id: str, access_key: str | None, user: User | None = None) -> Provider:
     provider = db.get(Provider, provider_id)
     if provider is None or not provider.is_active:
         _not_found("Provider not found or inactive.")
+    if user is not None:
+        if user.role == "admin" or (user.role == "provider" and user.provider_id == provider.id):
+            return provider
+        raise HTTPException(status_code=403, detail={"code": "PROVIDER_FORBIDDEN", "message": "This account cannot manage the selected provider."})
     if not access_key or not provider.portal_access_key or not secrets.compare_digest(access_key, provider.portal_access_key):
         raise HTTPException(status_code=401, detail={"code": "PROVIDER_UNAUTHORIZED", "message": "A valid provider access key is required."})
     return provider
@@ -77,7 +82,7 @@ def _signing_secret() -> str:
     if settings.app_signing_secret:
         return settings.app_signing_secret
     if settings.app_env.lower() in {"development", "test"}:
-        return "local-explorer-development-only-signing-secret"
+        return _DEVELOPMENT_SIGNING_SECRET
     raise HTTPException(status_code=503, detail={"code": "SIGNING_SECRET_NOT_CONFIGURED", "message": "Set APP_SIGNING_SECRET before enabling provider confirmations."})
 
 
@@ -193,7 +198,11 @@ def get_replan_advice(
     payload: ReplanAdviceRequest,
     db: Session = Depends(get_db),
     provider: StructuredOutputProvider = Depends(get_llm_provider),
+    user: User | None = Depends(get_optional_user),
 ):
+    itinerary = db.get(Itinerary, itinerary_id)
+    if itinerary and itinerary.user_id and (user is None or (user.id != itinerary.user_id and user.role != "admin")):
+        raise HTTPException(status_code=403, detail={"code": "ITINERARY_FORBIDDEN", "message": "This itinerary belongs to another account."})
     try:
         return ReplanningService(db, provider).advise(itinerary_id, payload.event_id)
     except LookupError as error:
@@ -207,10 +216,13 @@ def accept_replan(
     itinerary_id: str,
     payload: ReplanAcceptRequest,
     db: Session = Depends(get_db),
+    user: User | None = Depends(get_optional_user),
 ):
     itinerary = db.get(Itinerary, itinerary_id)
     if itinerary is None:
         _not_found("Itinerary not found.")
+    if itinerary.user_id and (user is None or (user.id != itinerary.user_id and user.role != "admin")):
+        raise HTTPException(status_code=403, detail={"code": "ITINERARY_FORBIDDEN", "message": "This itinerary belongs to another account."})
     if itinerary.current_version != payload.base_version:
         raise HTTPException(status_code=409, detail={"code": "STALE_ITINERARY_VERSION", "message": "The itinerary changed after this advice. Request fresh advice before accepting."})
     try:
@@ -232,8 +244,9 @@ def preview_provider_slot_action(
     x_provider_access_key: str | None = Header(default=None),
     db: Session = Depends(get_db),
     provider: StructuredOutputProvider = Depends(get_llm_provider),
+    user: User | None = Depends(get_optional_user),
 ):
-    owner = _provider_auth(db, provider_id, x_provider_access_key)
+    owner = _provider_auth(db, provider_id, x_provider_access_key, user)
     slots = _load_slots(db, payload.slot_ids)
     if any(slot.experience.provider_id != owner.id for slot in slots):
         raise HTTPException(status_code=403, detail={"code": "SLOT_OUTSIDE_PROVIDER", "message": "All selected slots must belong to this provider."})
@@ -302,8 +315,9 @@ def confirm_provider_slot_action(
     payload: ProviderActionConfirmRequest,
     x_provider_access_key: str | None = Header(default=None),
     db: Session = Depends(get_db),
+    user: User | None = Depends(get_optional_user),
 ):
-    owner = _provider_auth(db, provider_id, x_provider_access_key)
+    owner = _provider_auth(db, provider_id, x_provider_access_key, user)
     claims = _verify_confirmation_token(payload.confirmation_token)
     if claims.get("provider_id") != owner.id:
         raise HTTPException(status_code=403, detail={"code": "TOKEN_PROVIDER_MISMATCH", "message": "This confirmation is not for the authenticated provider."})
@@ -361,11 +375,20 @@ def label_feedback(
     result = PromptRunner(provider).run("FEEDBACK_LABELER", facts, FeedbackTrainingSample)
     if result.itinerary_id != itinerary.id:
         raise InvalidStructuredOutput("FEEDBACK_LABELER changed the itinerary_id.")
-    feedback = Feedback(itinerary_id=itinerary.id, rating=payload.rating, comment=payload.review_text,
-                        relevance_grade=result.relevance_grade, rubric_justification_vi=result.rubric_justification_vi,
-                        objective_achieved_ratio=result.objective_achieved_ratio,
-                        is_usable_for_training=result.is_usable_for_training, labeler_prompt_version=catalog.version)
-    db.add(feedback)
+    feedback = db.scalar(select(Feedback).where(
+        Feedback.itinerary_id == itinerary.id,
+        Feedback.comment == payload.review_text,
+        Feedback.rating == payload.rating,
+        Feedback.labeler_prompt_version.is_(None),
+    ).order_by(Feedback.created_at.desc()).with_for_update())
+    if feedback is None:
+        feedback = Feedback(itinerary_id=itinerary.id, rating=payload.rating, comment=payload.review_text)
+        db.add(feedback)
+    feedback.relevance_grade = result.relevance_grade
+    feedback.rubric_justification_vi = result.rubric_justification_vi
+    feedback.objective_achieved_ratio = result.objective_achieved_ratio
+    feedback.is_usable_for_training = result.is_usable_for_training
+    feedback.labeler_prompt_version = catalog.version
     db.commit()
     db.refresh(feedback)
     return {"feedback_id": feedback.id, "label": result.model_dump(), "prompt_version": catalog.version}

@@ -1,7 +1,109 @@
 import axios from 'axios'
-import type { Experience, Itinerary, POI } from '../types'
+import type { AuthUser, Experience, Itinerary, POI } from '../types'
 
-export const api = axios.create({ baseURL: '/api', timeout: 5000 })
+export const api = axios.create({ baseURL: '/api', timeout: 30000, withCredentials: true })
+
+export async function login(email: string, password: string): Promise<AuthUser> {
+  const { data } = await api.post<AuthUser>('/auth/login', { email, password })
+  return data
+}
+
+export async function registerAccount(email: string, display_name: string, password: string): Promise<AuthUser> {
+  const { data } = await api.post<AuthUser>('/auth/register', { email, display_name, password })
+  return data
+}
+
+export async function getCurrentUser(): Promise<AuthUser> {
+  const { data } = await api.get<AuthUser>('/auth/me')
+  return data
+}
+
+export async function logout(): Promise<void> {
+  await api.post('/auth/logout')
+}
+
+export async function updateProfile(display_name: string, phone: string | null): Promise<AuthUser> {
+  const { data } = await api.patch<AuthUser>('/auth/me', { display_name, phone })
+  return data
+}
+
+export async function changePassword(current_password: string | null, new_password: string): Promise<void> {
+  await api.post('/auth/password', { current_password, new_password })
+}
+
+export async function getMyItineraries() {
+  const { data } = await api.get<Array<{ id: string; planned_date: string | null; status: string; estimated_cost_vnd: number }>>('/me/itineraries')
+  return data
+}
+
+export async function createShareLink(itineraryId: string): Promise<{ share_url: string; share_token: string }> {
+  const { data } = await api.post<{ share_url: string; share_token: string }>(`/itineraries/${itineraryId}/share`)
+  return data
+}
+
+export async function getSharedItinerary(token: string): Promise<Itinerary> {
+  const { data } = await api.get<Itinerary>(`/shared/itineraries/${token}`)
+  return data
+}
+
+export async function submitFeedback(itineraryId: string, rating: number, review_text: string) {
+  const { data } = await api.post(`/itineraries/${itineraryId}/feedback`, { rating, review_text })
+  return data
+}
+
+export async function searchExperiences(q: string, params: Record<string, string | number | boolean>, semantic = false): Promise<Experience[]> {
+  const { data } = await api.get<{ items: Experience[] }>('/experience-search', { params: { ...params, q, semantic } })
+  return data.items
+}
+
+export async function getNotifications() {
+  const { data } = await api.get<Array<{ event_id: string; itinerary_id: string; stop_id: string; slot_id: string; message: string }>>('/notifications')
+  return data
+}
+
+export async function requestReplanAdvice(itineraryId: string, eventId: string) {
+  const { data } = await api.post<Record<string, unknown>>(`/itineraries/${itineraryId}/replan-advice`, { event_id: eventId })
+  return data
+}
+
+export async function acceptReplan(itineraryId: string, payload: Record<string, string | number>) {
+  const { data } = await api.post<Record<string, unknown>>(`/itineraries/${itineraryId}/replan-advice/accept`, payload)
+  return data
+}
+
+export async function getItineraryVersions(itineraryId: string) {
+  const { data } = await api.get<Array<{ version: number; stops: Array<{ experience_id: string; name: string; stop_order: number; cost_vnd: number; arrival_at?: string; departure_at?: string }>; total_cost_vnd: number; total_travel_time_s: number; created_at: string }>>(`/itineraries/${itineraryId}/versions`)
+  return data
+}
+
+export async function compareItineraries(firstId: string, secondId: string) {
+  const { data } = await api.get<Record<string, unknown>>('/itinerary-comparisons', { params: { first_id: firstId, second_id: secondId } })
+  return data
+}
+
+export const providerApi = {
+  profile: async () => (await api.get('/provider/me')).data,
+  experiences: async () => (await api.get('/provider/experiences')).data,
+  createExperience: async (payload: Record<string, unknown>) => (await api.post('/provider/experiences', payload)).data,
+  updateExperience: async (id: string, payload: Record<string, unknown>) => (await api.patch(`/provider/experiences/${id}`, payload)).data,
+  hideExperience: async (id: string) => (await api.delete(`/provider/experiences/${id}`)).data,
+  createSlot: async (id: string, payload: Record<string, unknown>) => (await api.post(`/provider/experiences/${id}/slots`, payload)).data,
+  updateSlot: async (id: string, payload: Record<string, unknown>) => (await api.patch(`/provider/slots/${id}`, payload)).data,
+  audit: async () => (await api.get('/provider/audit')).data,
+}
+
+export const adminApi = {
+  dashboard: async () => (await api.get('/admin/dashboard')).data,
+  users: async () => (await api.get('/admin/users')).data,
+  providers: async () => (await api.get('/admin/providers')).data,
+  updateUser: async (id: string, payload: Record<string, unknown>) => (await api.patch(`/admin/users/${id}`, payload)).data,
+  createProvider: async (payload: Record<string, unknown>) => (await api.post('/admin/providers', payload)).data,
+  moderation: async (status = 'pending') => (await api.get('/admin/moderation', { params: { status } })).data,
+  review: async (kind: string, id: string, action: string, note = '') => (await api.patch(`/admin/moderation/${kind}/${id}`, { action, note })).data,
+  duplicates: async () => (await api.get('/admin/duplicates/pois')).data,
+  mergeDuplicate: async (keep_id: string, duplicate_id: string, reason: string) => (await api.post('/admin/duplicates/pois/merge', { keep_id, duplicate_id, reason })).data,
+  audit: async () => (await api.get('/admin/audit')).data,
+}
 
 // Rich simulated Saigon demo data
 const DEMO_POIS: POI[] = [
@@ -174,11 +276,12 @@ function generateMockExperiences(): Experience[] {
 const mockExperiencesStore = generateMockExperiences()
 const mockItineraryStore = new Map<string, Itinerary>()
 
-export async function getExperiences(params?: Record<string, string | number>): Promise<Experience[]> {
+export async function getExperiences(params?: Record<string, string | number | boolean>): Promise<Experience[]> {
   try {
     const { data } = await api.get<Experience[]>('/experiences', { params })
     return data
-  } catch {
+  } catch (error) {
+    if (axios.isAxiosError(error) && error.response) throw error
     let result = [...mockExperiencesStore]
     if (params?.intent) {
       result = result.filter((e) => e.poi.category === params.intent || e.intent_tags.includes(String(params.intent)))
@@ -186,6 +289,8 @@ export async function getExperiences(params?: Record<string, string | number>): 
     if (params?.max_price) {
       result = result.filter((e) => e.price_vnd <= Number(params.max_price))
     }
+    if (typeof params?.is_indoor === 'boolean') result = result.filter((e) => e.indoor === params.is_indoor)
+    if (params?.query) result = result.filter((e) => `${e.name} ${e.description} ${e.poi.name}`.toLowerCase().includes(String(params.query).toLowerCase()))
     return result
   }
 }
@@ -194,7 +299,8 @@ export async function getPOIs(): Promise<POI[]> {
   try {
     const { data } = await api.get<POI[]>('/pois')
     return data
-  } catch {
+  } catch (error) {
+    if (axios.isAxiosError(error) && error.response) throw error
     return DEMO_POIS
   }
 }
@@ -207,11 +313,19 @@ export async function createItinerary(payload: {
   transport_mode: string
   intent_weights: Record<string, number>
   locked_experience_ids: string[]
+  locked_poi_ids?: string[]
+  origin_latitude?: number
+  origin_longitude?: number
+  origin_label?: string
+  destination_latitude?: number
+  destination_longitude?: number
+  destination_label?: string
 }): Promise<Itinerary> {
   try {
     const { data } = await api.post<Itinerary>('/itineraries/plan', payload)
     return data
-  } catch {
+  } catch (error) {
+    if (axios.isAxiosError(error) && error.response) throw error
     // Generate intelligent client-side simulated itinerary
     const selectedIntents = Object.keys(payload.intent_weights)
     let candidates = mockExperiencesStore.filter((exp) => {
@@ -290,7 +404,8 @@ export async function getItinerary(id: string): Promise<Itinerary> {
   try {
     const { data } = await api.get<Itinerary>(`/itineraries/${id}`)
     return data
-  } catch {
+  } catch (error) {
+    if (axios.isAxiosError(error) && error.response) throw error
     const found = mockItineraryStore.get(id)
     if (found) return found
 

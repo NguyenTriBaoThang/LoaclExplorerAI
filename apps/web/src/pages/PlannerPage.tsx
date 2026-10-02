@@ -1,4 +1,4 @@
-import { useState, type FormEvent } from 'react'
+import { useEffect, useState, type FormEvent } from 'react'
 import {
   ArrowRight,
   CalendarDays,
@@ -14,8 +14,9 @@ import {
   CheckCircle2,
 } from 'lucide-react'
 import { useNavigate } from 'react-router-dom'
-import { apiErrorMessage, createItinerary } from '../api/client'
+import { apiErrorMessage, createItinerary, getPOIs } from '../api/client'
 import { TiltCard3D } from '../components/3d/TiltCard3D'
+import type { POI } from '../types'
 
 const intents = [
   { id: 'food', label: 'Ẩm thực Sài Gòn', glyph: '🍜', desc: 'Món Nam Bộ, cà phê vợt, bánh truyền thống' },
@@ -49,8 +50,14 @@ export function PlannerPage() {
   const [budget, setBudget] = useState(1200000)
   const [transport, setTransport] = useState('driving')
   const [selectedIntents, setSelectedIntents] = useState<string[]>(['food', 'handicraft'])
+  const [pois, setPois] = useState<POI[]>([])
+  const [lockedPois, setLockedPois] = useState<string[]>([])
+  const [originId, setOriginId] = useState('')
+  const [destinationId, setDestinationId] = useState('')
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
+
+  useEffect(() => { void getPOIs().then(setPois).catch(() => setPois([])) }, [])
 
   const toggleIntent = (id: string) => {
     setSelectedIntents((current) =>
@@ -69,6 +76,8 @@ export function PlannerPage() {
     setError('')
     try {
       const toIso = (value: string) => new Date(`${date}T${value}:00+07:00`).toISOString()
+      const origin = pois.find((poi) => poi.id === originId)
+      const destination = pois.find((poi) => poi.id === destinationId)
       const result = await createItinerary({
         start_at: toIso(startTime),
         end_at: toIso(endTime),
@@ -77,6 +86,9 @@ export function PlannerPage() {
         transport_mode: transport,
         intent_weights: Object.fromEntries(selectedIntents.map((intent) => [intent, 1])),
         locked_experience_ids: [],
+        locked_poi_ids: lockedPois,
+        ...(origin ? { origin_latitude: origin.latitude, origin_longitude: origin.longitude, origin_label: origin.name } : {}),
+        ...(destination ? { destination_latitude: destination.latitude, destination_longitude: destination.longitude, destination_label: destination.name } : {}),
       })
       navigate(`/itinerary/${result.itinerary_id}`, { state: { itinerary: result } })
     } catch (reason) {
@@ -260,6 +272,19 @@ export function PlannerPage() {
                 </button>
               ))}
             </div>
+          </div>
+
+          <div className="form-card-3d">
+            <div className="form-card-header"><span className="step-num">04</span><div>
+              <h2>Xuất phát, điểm về và POI bắt buộc</h2>
+              <p>Giờ về tính cả chặng cuối từ trải nghiệm đến điểm về đã chọn.</p>
+            </div></div>
+            <div className="form-fields-grid-2">
+              <label className="field-group-3d"><span>Điểm xuất phát (tùy chọn)</span><select value={originId} onChange={e => setOriginId(e.target.value)}><option value="">Chưa chọn</option>{pois.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}</select></label>
+              <label className="field-group-3d"><span>Điểm phải về trước giờ kết thúc (tùy chọn)</span><select value={destinationId} onChange={e => setDestinationId(e.target.value)}><option value="">Chưa chọn</option>{pois.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}</select></label>
+            </div>
+            <h3>Khóa điểm muốn ghé</h3>
+            <div className="form-fields-grid-2">{pois.map(poi => <label key={poi.id}><input type="checkbox" checked={lockedPois.includes(poi.id)} onChange={e => setLockedPois(old => e.target.checked ? [...old, poi.id] : old.filter(id => id !== poi.id))} /> {poi.name}</label>)}</div>
           </div>
 
           {error && <div className="form-alert-3d">{error}</div>}

@@ -28,6 +28,8 @@ services:
   api:
     build:
       context: ./apps/api
+      args:
+        INSTALL_E5: ${INSTALL_E5:-false}
     environment:
       APP_ENV: ${APP_ENV:-development}
       DATABASE_URL: ${DATABASE_URL:-postgresql+psycopg://postgres:${POSTGRES_PASSWORD:-postgres}@db:5432/local_explorer}
@@ -40,6 +42,17 @@ services:
       OPENAI_TIMEOUT_SECONDS: ${OPENAI_TIMEOUT_SECONDS:-30}
       ADMIN_API_KEY: ${ADMIN_API_KEY:-}
       APP_SIGNING_SECRET: ${APP_SIGNING_SECRET:-}
+      AUTH_SECRET: ${AUTH_SECRET:-}
+      SESSION_TTL_SECONDS: ${SESSION_TTL_SECONDS:-7200}
+      GOOGLE_CLIENT_ID: ${GOOGLE_CLIENT_ID:-}
+      GOOGLE_CLIENT_SECRET: ${GOOGLE_CLIENT_SECRET:-}
+      GOOGLE_REDIRECT_URI: ${GOOGLE_REDIRECT_URI:-http://localhost:8000/api/auth/google/callback}
+      WEB_APP_URL: ${WEB_APP_URL:-http://localhost:5173}
+      DEMO_ADMIN_EMAIL: ${DEMO_ADMIN_EMAIL:-localexplorerai@admin.com}
+      DEMO_ADMIN_PASSWORD: ${DEMO_ADMIN_PASSWORD:-}
+      DEMO_TRAVELER_EMAIL: ${DEMO_TRAVELER_EMAIL:-baothang@gmail.com}
+      DEMO_TRAVELER_PASSWORD: ${DEMO_TRAVELER_PASSWORD:-}
+      E5_MODEL_PATH: ${E5_MODEL_PATH:-/models/e5}
     ports:
       - "${API_PORT:-8000}:8000"
     depends_on:
@@ -47,6 +60,8 @@ services:
         condition: service_healthy
       redis:
         condition: service_healthy
+    volumes:
+      - ./models/e5:/models/e5:ro
     command: ["sh", "-c", "alembic upgrade head && python -m scripts.seed_db && uvicorn app.main:app --host 0.0.0.0 --port 8000"]
 
   web:
