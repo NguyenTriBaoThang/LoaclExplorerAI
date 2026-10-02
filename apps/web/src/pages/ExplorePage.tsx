@@ -9,6 +9,8 @@ import {
   Sparkles,
   MapPin,
   RotateCcw,
+  SlidersHorizontal,
+  Zap,
 } from 'lucide-react'
 import { Link, useSearchParams } from 'react-router-dom'
 import { apiErrorMessage, getExperiences, searchExperiences } from '../api/client'
@@ -24,6 +26,16 @@ const categories = [
   { value: 'culture', label: 'Văn hóa', icon: '🏛️' },
   { value: 'nature', label: 'Thiên nhiên', icon: '🌿' },
   { value: 'relaxation', label: 'Thư giãn', icon: '🍵' },
+]
+
+const topicSuggestions = [
+  'cà phê',
+  'làm gốm',
+  'giấy dó',
+  'cơm niêu',
+  'sông Sài Gòn',
+  'bảo tàng',
+  'thảo mộc',
 ]
 
 const localToday = () =>
@@ -53,6 +65,7 @@ export function ExplorePage() {
   const [slotId, setSlotId] = useState('')
   const [semantic, setSemantic] = useState(false)
   const [selectedId, setSelectedId] = useState('')
+  const [showAdvanced, setShowAdvanced] = useState(false)
 
   useEffect(() => {
     let active = true
@@ -74,14 +87,17 @@ export function ExplorePage() {
       center_longitude: 106.7009,
       ...(slotId ? { slot_id: slotId } : {}),
     }
-    const request = semantic && search.trim().length >= 2
-      ? searchExperiences(search.trim(), params, true)
-      : getExperiences({ ...params, ...(search.trim() ? { query: search.trim() } : {}) })
+    const request =
+      semantic && search.trim().length >= 2
+        ? searchExperiences(search.trim(), params, true)
+        : getExperiences({ ...params, ...(search.trim() ? { query: search.trim() } : {}) })
     request
       .then((data) => {
         if (active) {
           setItems(data)
-          setSelectedId(current => data.some(item => item.id === current) ? current : (data[0]?.id || ''))
+          setSelectedId((current) =>
+            data.some((item) => item.id === current) ? current : data[0]?.id || ''
+          )
         }
       })
       .catch((reason: unknown) => {
@@ -98,10 +114,13 @@ export function ExplorePage() {
 
   const visible = useMemo(
     () =>
-      items.filter((item) => semantic || !search.trim() ||
-        `${item.name} ${item.description} ${item.poi.name}`
-          .toLowerCase()
-          .includes(search.toLowerCase())
+      items.filter(
+        (item) =>
+          semantic ||
+          !search.trim() ||
+          `${item.name} ${item.description} ${item.poi.name}`
+            .toLowerCase()
+            .includes(search.toLowerCase())
       ),
     [items, search, semantic]
   )
@@ -114,8 +133,6 @@ export function ExplorePage() {
     category: item.poi.category,
     number: index + 1,
   }))
-
-  const activeExperience = visible.find((item) => item.id === selectedId)
 
   const resetFilters = () => {
     setSearch('')
@@ -130,6 +147,13 @@ export function ExplorePage() {
     setSlotId('')
     setSemantic(false)
   }
+
+  const activeAdvancedCount =
+    (indoor !== 'all' ? 1 : 0) +
+    (topic ? 1 : 0) +
+    (radiusKm !== 15 ? 1 : 0) +
+    (slotId ? 1 : 0) +
+    (semantic ? 1 : 0)
 
   return (
     <div className="explore-page-3d page-wrap">
@@ -173,12 +197,26 @@ export function ExplorePage() {
           <input
             value={search}
             onChange={(e) => setSearch(e.target.value)}
-            placeholder="Tìm theo tên trải nghiệm, địa điểm hoặc từ khóa..."
+            placeholder={
+              semantic
+                ? 'Mô tả ý định bằng ngôn ngữ tự nhiên (vd: muốn workshop gốm thư giãn buổi chiều)...'
+                : 'Tìm theo tên trải nghiệm, địa điểm hoặc từ khóa...'
+            }
           />
           {search && (
-            <button type="button" className="clear-search-btn" onClick={() => setSearch('')}>
+            <button
+              type="button"
+              className="clear-search-btn"
+              onClick={() => setSearch('')}
+              aria-label="Xóa tìm kiếm"
+            >
               ×
             </button>
+          )}
+          {semantic && (
+            <span className="semantic-active-badge">
+              <Zap size={12} /> E5 Vector
+            </span>
           )}
         </div>
 
@@ -236,23 +274,125 @@ export function ExplorePage() {
             />
           </div>
 
-          <button
-            type="button"
-            className="reset-filters-btn"
-            onClick={resetFilters}
-            title="Đặt lại bộ lọc"
-          >
-            <RotateCcw size={16} />
-          </button>
-        </div>
-      </div>
+          <div className="toolbar-actions-pair">
+            <button
+              type="button"
+              className={`advanced-toggle-btn ${showAdvanced || activeAdvancedCount > 0 ? 'advanced-btn-active' : ''}`}
+              onClick={() => setShowAdvanced(!showAdvanced)}
+              title="Bộ lọc nâng cao"
+            >
+              <SlidersHorizontal size={16} />
+              <span>Lọc thêm</span>
+              {activeAdvancedCount > 0 && (
+                <span className="advanced-count-bubble">{activeAdvancedCount}</span>
+              )}
+            </button>
 
-      <div className="filter-inputs-group" style={{ margin: '12px 0', flexWrap: 'wrap' }}>
-        <label>Chủ đề <input value={topic} onChange={e => setTopic(e.target.value)} placeholder="vd: thủ công" /></label>
-        <label>Không gian <select value={indoor} onChange={e => setIndoor(e.target.value)}><option value="all">Trong/ngoài nhà</option><option value="indoor">Trong nhà</option><option value="outdoor">Ngoài trời</option></select></label>
-        <label>Bán kính từ trung tâm Q.1 (km) <input type="number" min={1} max={100} value={radiusKm} onChange={e => setRadiusKm(Math.max(1, Number(e.target.value)))} /></label>
-        <label>Mã slot <input value={slotId} onChange={e => setSlotId(e.target.value)} placeholder="Tùy chọn" /></label>
-        <label><input type="checkbox" checked={semantic} onChange={e => setSemantic(e.target.checked)} /> Tìm kiếm ngữ nghĩa E5 (chỉ cần câu mô tả ý định)</label>
+            <button
+              type="button"
+              className="reset-filters-btn"
+              onClick={resetFilters}
+              title="Đặt lại bộ lọc"
+            >
+              <RotateCcw size={16} />
+            </button>
+          </div>
+        </div>
+
+        {/* Expandable Advanced Filters Drawer */}
+        {showAdvanced && (
+          <div className="advanced-filter-panel animate-fadeIn">
+            <div className="advanced-filter-row">
+              {/* Topic suggestions */}
+              <div className="advanced-field-col">
+                <label className="adv-label">
+                  <span>Chủ đề / Từ khóa</span>
+                  <input
+                    value={topic}
+                    onChange={(e) => setTopic(e.target.value)}
+                    placeholder="vd: làm gốm, cà phê, thủ công..."
+                    className="adv-text-input"
+                  />
+                </label>
+                <div className="topic-quick-pills">
+                  {topicSuggestions.map((s) => (
+                    <button
+                      key={s}
+                      type="button"
+                      className={`topic-pill ${topic === s ? 'topic-pill-active' : ''}`}
+                      onClick={() => setTopic(topic === s ? '' : s)}
+                    >
+                      {s}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              {/* Space: Indoor / Outdoor */}
+              <div className="advanced-field-col">
+                <label className="adv-label">
+                  <span>Không gian trải nghiệm</span>
+                </label>
+                <div className="segmented-control">
+                  <button
+                    type="button"
+                    className={`seg-btn ${indoor === 'all' ? 'seg-active' : ''}`}
+                    onClick={() => setIndoor('all')}
+                  >
+                    Tất cả
+                  </button>
+                  <button
+                    type="button"
+                    className={`seg-btn ${indoor === 'indoor' ? 'seg-active' : ''}`}
+                    onClick={() => setIndoor('indoor')}
+                  >
+                    Trong nhà
+                  </button>
+                  <button
+                    type="button"
+                    className={`seg-btn ${indoor === 'outdoor' ? 'seg-active' : ''}`}
+                    onClick={() => setIndoor('outdoor')}
+                  >
+                    Ngoài trời
+                  </button>
+                </div>
+              </div>
+
+              {/* Distance Radius */}
+              <div className="advanced-field-col">
+                <label className="adv-label">
+                  <span>Bán kính từ trung tâm Q.1: <strong>{radiusKm} km</strong></span>
+                  <input
+                    type="range"
+                    min={1}
+                    max={50}
+                    step={1}
+                    value={radiusKm}
+                    onChange={(e) => setRadiusKm(Number(e.target.value))}
+                    className="adv-range-slider"
+                  />
+                </label>
+              </div>
+
+              {/* Semantic E5 Toggle */}
+              <div className="advanced-field-col">
+                <label className="adv-label">
+                  <span>Tìm kiếm AI Vector</span>
+                </label>
+                <label className="toggle-switch-card">
+                  <input
+                    type="checkbox"
+                    checked={semantic}
+                    onChange={(e) => setSemantic(e.target.checked)}
+                    className="toggle-checkbox"
+                  />
+                  <div className="toggle-slider" />
+                  <span className="toggle-label">Mô hình E5 Semantics</span>
+                </label>
+              </div>
+            </div>
+          </div>
+        )}
       </div>
 
       {error && (
@@ -273,11 +413,11 @@ export function ExplorePage() {
             <div>
               <span className="results-sub">DANH SÁCH GỢI Ý</span>
               <strong className="results-count">
-                {loading ? 'Đang tải trải nghiệm...' : `${visible.length} trải nghiệm phù hợp`}
+                {loading ? 'Đang quét dữ liệu...' : `${visible.length} trải nghiệm phù hợp`}
               </strong>
             </div>
             <span className="budget-per-person">
-              Ước tính: ~{(Math.floor(budget / groupSize)).toLocaleString('vi-VN')}₫ / người
+              Ước tính: ~{Math.floor(budget / groupSize).toLocaleString('vi-VN')}₫ / người
             </span>
           </div>
 
@@ -298,11 +438,13 @@ export function ExplorePage() {
               ))
             ) : (
               <div className="empty-state-3d">
-                <div className="empty-icon-box">🔍</div>
+                <div className="empty-icon-box">🧭</div>
                 <h3>Không tìm thấy trải nghiệm phù hợp</h3>
-                <p>Hãy thử tăng ngân sách, thay đổi ngày đi hoặc xóa từ khóa tìm kiếm.</p>
-                <button type="button" className="btn-secondary-3d" onClick={resetFilters}>
-                  Đặt lại toàn bộ lọc
+                <p>
+                  Hãy thử mở rộng khoảng thời gian, tăng bán kính tìm kiếm hoặc đặt lại bộ lọc.
+                </p>
+                <button type="button" className="btn-secondary-3d btn-sm" onClick={resetFilters}>
+                  <RotateCcw size={14} /> Đặt lại tất cả bộ lọc
                 </button>
               </div>
             )}
@@ -313,34 +455,29 @@ export function ExplorePage() {
         <section className="map-column-3d">
           <div className="map-panel-header-3d">
             <div>
-              <span className="map-sub">KHÔNG GIAN ĐỊA LÝ</span>
-              <strong className="map-title">Bản đồ trải nghiệm 3D</strong>
+              <span className="map-sub">BẢN ĐỒ VỊ TRÍ</span>
+              <strong className="map-title">Phân bổ tại TP. HCM</strong>
             </div>
-            <span className="map-points-badge">{visible.length} tọa độ</span>
+            <span className="map-poi-counter">
+              <MapPin size={13} className="text-emerald" /> {points.length} điểm neo
+            </span>
           </div>
 
-          <MapAdapter
-            points={points}
-            selectedId={selectedId}
-            onSelect={setSelectedId}
-            className="explore-map-container"
-          />
+          <div className="map-shell-3d">
+            <MapAdapter
+              points={points}
+              selectedId={selectedId}
+              onSelect={setSelectedId}
+              className="explore-map-container"
+            />
+          </div>
 
-          {activeExperience && (
-            <div className="map-active-preview-card">
-              <div className="preview-top">
-                <span className="preview-tag">{activeExperience.poi.category}</span>
-                <strong className="preview-name">{activeExperience.name}</strong>
-              </div>
-              <p className="preview-address">
-                <MapPin size={13} className="text-emerald" /> {activeExperience.poi.address}
-              </p>
-            </div>
-          )}
-
-          <p className="map-note-text">
-            Tọa độ và dữ liệu trải nghiệm mang tính chất mô phỏng trong bản prototype trình diễn.
-          </p>
+          <div className="map-footer-caption">
+            <span className="live-dot-glow" />
+            <span>
+              Chọn một điểm trên bản đồ hoặc danh sách để xem chi tiết khung giờ và chi phí thực tế.
+            </span>
+          </div>
         </section>
       </div>
     </div>

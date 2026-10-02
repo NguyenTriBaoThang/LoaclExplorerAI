@@ -4,6 +4,7 @@ import { HomePage } from './pages/HomePage'
 import { ExplorePage } from './pages/ExplorePage'
 import { PlannerPage } from './pages/PlannerPage'
 import { ItineraryPage } from './pages/ItineraryPage'
+import { ProviderPage } from './pages/ProviderPage'
 import { ProviderPortalPage } from './pages/ProviderPortalPage'
 import { AboutPage } from './pages/AboutPage'
 import { AuthPage } from './pages/AuthPage'
@@ -24,12 +25,13 @@ export const router = createBrowserRouter([{
     { path: '/login', element: <AuthPage /> },
     { path: '/register', element: <AuthPage register /> },
     { path: '/about', element: <AboutPage /> },
+    { path: '/provider', element: <ProviderPage /> },
     { element: <RoleRoute roles={['traveler', 'provider', 'admin']} />, children: [
       { path: '/profile', element: <ProfilePage /> },
       { path: '/compare', element: <ComparePage /> },
     ] },
     { element: <RoleRoute roles={['provider']} />, children: [
-      { path: '/provider', element: <ProviderPortalPage /> },
+      { path: '/provider-portal', element: <ProviderPortalPage /> },
     ] },
     { element: <RoleRoute roles={['admin']} />, children: [
       { path: '/admin', element: <AdminPage /> },

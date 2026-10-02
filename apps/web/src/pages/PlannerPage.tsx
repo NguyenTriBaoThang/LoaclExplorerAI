@@ -12,6 +12,8 @@ import {
   Sparkles,
   Navigation,
   CheckCircle2,
+  Lock,
+  Search,
 } from 'lucide-react'
 import { useNavigate } from 'react-router-dom'
 import { apiErrorMessage, createItinerary, getPOIs } from '../api/client'
@@ -27,11 +29,13 @@ const intents = [
 ]
 
 const transportModes = [
-  { id: 'driving', label: 'Xe máy / Ô tô', icon: '🛵', note: 'Phù hợp đi qua nhiều quận' },
-  { id: 'walking', label: 'Đi bộ khám phá', icon: '🚶', note: 'Tập trung một khu phố' },
-  { id: 'bicycling', label: 'Xe đạp dạo phố', icon: '🚲', note: 'Thong thả sáng sớm/chiều tà' },
-  { id: 'transit', label: 'Xe bus công cộng', icon: '🚌', note: 'Tiết kiệm chi phí' },
+  { id: 'driving', label: 'Xe máy / Ô tô', icon: '🛵', note: 'Phù hợp đi qua nhiều quận, linh hoạt' },
+  { id: 'walking', label: 'Đi bộ khám phá', icon: '🚶', note: 'Tập trung khu phố cổ, bán kính hẹp' },
+  { id: 'bicycling', label: 'Xe đạp dạo phố', icon: '🚲', note: 'Thong thả sáng sớm hoặc chiều mát' },
+  { id: 'transit', label: 'Xe bus công cộng', icon: '🚌', note: 'Tiết kiệm chi phí, trải nghiệm địa phương' },
 ]
+
+const budgetPresets = [500000, 1000000, 2000000, 3500000]
 
 const today = () =>
   new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Ho_Chi_Minh' }).format(new Date())
@@ -52,12 +56,15 @@ export function PlannerPage() {
   const [selectedIntents, setSelectedIntents] = useState<string[]>(['food', 'handicraft'])
   const [pois, setPois] = useState<POI[]>([])
   const [lockedPois, setLockedPois] = useState<string[]>([])
+  const [poiSearch, setPoiSearch] = useState('')
   const [originId, setOriginId] = useState('')
   const [destinationId, setDestinationId] = useState('')
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
 
-  useEffect(() => { void getPOIs().then(setPois).catch(() => setPois([])) }, [])
+  useEffect(() => {
+    void getPOIs().then(setPois).catch(() => setPois([]))
+  }, [])
 
   const toggleIntent = (id: string) => {
     setSelectedIntents((current) =>
@@ -65,10 +72,23 @@ export function PlannerPage() {
     )
   }
 
+  const toggleLockPoi = (id: string) => {
+    setLockedPois((current) =>
+      current.includes(id) ? current.filter((item) => item !== id) : [...current, id]
+    )
+  }
+
   // Calculate approximate duration
-  const startHour = parseInt(startTime.split(':')[0], 10) + parseInt(startTime.split(':')[1], 10) / 60
-  const endHour = parseInt(endTime.split(':')[0], 10) + parseInt(endTime.split(':')[1], 10) / 60
+  const startHour =
+    parseInt(startTime.split(':')[0], 10) + parseInt(startTime.split(':')[1], 10) / 60
+  const endHour =
+    parseInt(endTime.split(':')[0], 10) + parseInt(endTime.split(':')[1], 10) / 60
   const totalHours = Math.max(1, Math.round((endHour - startHour) * 10) / 10)
+
+  const filteredPois = pois.filter((poi) =>
+    poi.name.toLowerCase().includes(poiSearch.toLowerCase()) ||
+    poi.address.toLowerCase().includes(poiSearch.toLowerCase())
+  )
 
   async function submit(event: FormEvent) {
     event.preventDefault()
@@ -87,8 +107,20 @@ export function PlannerPage() {
         intent_weights: Object.fromEntries(selectedIntents.map((intent) => [intent, 1])),
         locked_experience_ids: [],
         locked_poi_ids: lockedPois,
-        ...(origin ? { origin_latitude: origin.latitude, origin_longitude: origin.longitude, origin_label: origin.name } : {}),
-        ...(destination ? { destination_latitude: destination.latitude, destination_longitude: destination.longitude, destination_label: destination.name } : {}),
+        ...(origin
+          ? {
+              origin_latitude: origin.latitude,
+              origin_longitude: origin.longitude,
+              origin_label: origin.name,
+            }
+          : {}),
+        ...(destination
+          ? {
+              destination_latitude: destination.latitude,
+              destination_longitude: destination.longitude,
+              destination_label: destination.name,
+            }
+          : {}),
       })
       navigate(`/itinerary/${result.itinerary_id}`, { state: { itinerary: result } })
     } catch (reason) {
@@ -111,7 +143,7 @@ export function PlannerPage() {
           </h1>
           <p className="page-subtext-3d">
             Hệ thống kết hợp mục đích chuyến đi, sức chứa khung giờ và tuyến đường di chuyển tối ưu
-            để tạo lịch trình thực tế nhất.
+            để tạo lịch trình thực tế nhất tại TP. Hồ Chí Minh.
           </p>
         </div>
         <div className="planner-badge-wrap">
@@ -132,6 +164,10 @@ export function PlannerPage() {
               <div>
                 <h2>Thời gian & Quy mô nhóm</h2>
                 <p>Khung thời gian rảnh và ngân sách dự kiến của bạn.</p>
+              </div>
+              <div className="duration-preview-chip">
+                <Clock3 size={13} className="text-emerald" />
+                <span>{totalHours > 0 ? `Thời lượng: ~${totalHours} giờ` : 'Cần kiểm tra giờ'}</span>
               </div>
             </div>
 
@@ -198,10 +234,15 @@ export function PlannerPage() {
                 </div>
               </div>
 
-              <label className="field-group-3d">
-                <span>
-                  <Wallet size={14} className="text-emerald" /> Tổng ngân sách (VND)
-                </span>
+              <div className="field-group-3d">
+                <div className="field-label-split">
+                  <span>
+                    <Wallet size={14} className="text-emerald" /> Tổng ngân sách (VND)
+                  </span>
+                  <span className="budget-calc-sub">
+                    ~{Math.floor(budget / groupSize).toLocaleString('vi-VN')}₫ / người
+                  </span>
+                </div>
                 <input
                   required
                   type="number"
@@ -210,7 +251,19 @@ export function PlannerPage() {
                   value={budget}
                   onChange={(e) => setBudget(Math.max(0, Number(e.target.value)))}
                 />
-              </label>
+                <div className="budget-presets-row">
+                  {budgetPresets.map((amt) => (
+                    <button
+                      key={amt}
+                      type="button"
+                      className={`preset-btn ${budget === amt ? 'preset-active' : ''}`}
+                      onClick={() => setBudget(amt)}
+                    >
+                      {(amt / 1000000).toFixed(amt % 1000000 === 0 ? 0 : 1)}tr
+                    </button>
+                  ))}
+                </div>
+              </div>
             </div>
           </div>
 
@@ -239,7 +292,7 @@ export function PlannerPage() {
                       <strong>{item.label}</strong>
                       <small>{item.desc}</small>
                     </div>
-                    {active && <CheckCircle2 size={16} className="intent-check-icon" />}
+                    {active && <CheckCircle2 size={18} className="intent-check-icon" />}
                   </button>
                 )
               })}
@@ -274,17 +327,95 @@ export function PlannerPage() {
             </div>
           </div>
 
+          {/* Section 04: Điểm xuất phát, Điểm về & Khóa POI */}
           <div className="form-card-3d">
-            <div className="form-card-header"><span className="step-num">04</span><div>
-              <h2>Xuất phát, điểm về và POI bắt buộc</h2>
-              <p>Giờ về tính cả chặng cuối từ trải nghiệm đến điểm về đã chọn.</p>
-            </div></div>
-            <div className="form-fields-grid-2">
-              <label className="field-group-3d"><span>Điểm xuất phát (tùy chọn)</span><select value={originId} onChange={e => setOriginId(e.target.value)}><option value="">Chưa chọn</option>{pois.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}</select></label>
-              <label className="field-group-3d"><span>Điểm phải về trước giờ kết thúc (tùy chọn)</span><select value={destinationId} onChange={e => setDestinationId(e.target.value)}><option value="">Chưa chọn</option>{pois.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}</select></label>
+            <div className="form-card-header">
+              <span className="step-num">04</span>
+              <div>
+                <h2>Điểm đón, điểm về & Ghim địa điểm</h2>
+                <p>Giờ về được thuật toán tính gồm cả chặng từ trải nghiệm cuối đến điểm về.</p>
+              </div>
             </div>
-            <h3>Khóa điểm muốn ghé</h3>
-            <div className="form-fields-grid-2">{pois.map(poi => <label key={poi.id}><input type="checkbox" checked={lockedPois.includes(poi.id)} onChange={e => setLockedPois(old => e.target.checked ? [...old, poi.id] : old.filter(id => id !== poi.id))} /> {poi.name}</label>)}</div>
+
+            <div className="form-fields-grid-2">
+              <label className="field-group-3d">
+                <span>
+                  <MapPin size={14} className="text-emerald" /> Điểm xuất phát (Tùy chọn)
+                </span>
+                <select value={originId} onChange={(e) => setOriginId(e.target.value)}>
+                  <option value="">Chưa chọn điểm xuất phát cụ thể</option>
+                  {pois.map((p) => (
+                    <option key={p.id} value={p.id}>
+                      {p.name}
+                    </option>
+                  ))}
+                </select>
+              </label>
+
+              <label className="field-group-3d">
+                <span>
+                  <MapPin size={14} className="text-amber" /> Điểm phải về trước giờ kết thúc
+                </span>
+                <select value={destinationId} onChange={(e) => setDestinationId(e.target.value)}>
+                  <option value="">Chưa chọn điểm về cố định</option>
+                  {pois.map((p) => (
+                    <option key={p.id} value={p.id}>
+                      {p.name}
+                    </option>
+                  ))}
+                </select>
+              </label>
+            </div>
+
+            {/* POI Locking Section with Card Selection */}
+            <div className="poi-lock-section">
+              <div className="poi-lock-header">
+                <div className="poi-lock-title-col">
+                  <span className="poi-lock-label">
+                    <Lock size={14} className="text-cyan" /> Ghim địa điểm bạn muốn ghé
+                  </span>
+                  <small>
+                    Các địa điểm này sẽ được thuật toán ưu tiên giữ lại trong lịch trình.
+                  </small>
+                </div>
+                {pois.length > 6 && (
+                  <div className="poi-search-box-mini">
+                    <Search size={14} />
+                    <input
+                      placeholder="Tìm địa điểm..."
+                      value={poiSearch}
+                      onChange={(e) => setPoiSearch(e.target.value)}
+                    />
+                  </div>
+                )}
+              </div>
+
+              <div className="poi-lock-cards-grid">
+                {filteredPois.slice(0, 8).map((poi) => {
+                  const locked = lockedPois.includes(poi.id)
+                  return (
+                    <button
+                      key={poi.id}
+                      type="button"
+                      className={`poi-lock-card ${locked ? 'poi-locked-active' : ''}`}
+                      onClick={() => toggleLockPoi(poi.id)}
+                    >
+                      <div className="poi-lock-status">
+                        {locked ? (
+                          <CheckCircle2 size={16} className="text-emerald" />
+                        ) : (
+                          <span className="poi-lock-empty-dot" />
+                        )}
+                      </div>
+                      <div className="poi-lock-info">
+                        <strong>{poi.name}</strong>
+                        <small>{poi.address}</small>
+                      </div>
+                    </button>
+                  )
+                })}
+              </div>
+            </div>
           </div>
 
           {error && <div className="form-alert-3d">{error}</div>}
@@ -292,8 +423,8 @@ export function PlannerPage() {
           {/* Submit Row */}
           <div className="submit-action-card">
             <div className="submit-summary-text">
-              <span>Đã chọn {selectedIntents.length} sở thích</span>
-              <small>Dữ liệu mô phỏng · Trình diễn thuật toán heuristic</small>
+              <strong>Đã chọn {selectedIntents.length} sở thích · {groupSize} khách</strong>
+              <small>Heuristic Planner 0ms · Dữ liệu khung giờ thực tế</small>
             </div>
             <button className="btn-planner-submit" type="submit" disabled={loading}>
               <span>{loading ? 'Đang tối ưu lịch trình...' : 'Tạo Lịch Trình Ngay'}</span>
@@ -322,7 +453,7 @@ export function PlannerPage() {
               </div>
               <div className="preview-stat-cell">
                 <small>Dự kiến</small>
-                <strong>~{(Math.floor(budget / groupSize)).toLocaleString('vi-VN')}₫</strong>
+                <strong>~{Math.floor(budget / groupSize).toLocaleString('vi-VN')}₫</strong>
                 <span className="stat-unit">/ người</span>
               </div>
               <div className="preview-stat-cell">
@@ -367,8 +498,8 @@ export function PlannerPage() {
           <div className="planner-guarantee-card">
             <h4>💡 Lưu ý về tính khả thi</h4>
             <p>
-              Các khung giờ chưa có báo cáo sức chứa sẽ hiện ở trạng thái <em>“cần xác nhận”</em>{' '}
-              kèm gợi ý liên hệ nhà cung cấp, giúp bạn luôn chủ động trong kế hoạch.
+              Các khung giờ chưa có báo cáo sức chứa sẽ hiện ở trạng thái <em>“cần xác nhận”</em> kèm
+              gợi ý liên hệ nhà cung cấp, giúp bạn luôn chủ động trong kế hoạch.
             </p>
           </div>
         </aside>
