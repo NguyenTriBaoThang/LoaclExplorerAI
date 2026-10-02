@@ -463,14 +463,12 @@ export function ExplorePage() {
             </span>
           </div>
 
-          <div className="map-shell-3d">
-            <MapAdapter
-              points={points}
-              selectedId={selectedId}
-              onSelect={setSelectedId}
-              className="explore-map-container"
-            />
-          </div>
+          <MapAdapter
+            points={points}
+            selectedId={selectedId}
+            onSelect={setSelectedId}
+            className="explore-map-container"
+          />
 
           <div className="map-footer-caption">
             <span className="live-dot-glow" />
