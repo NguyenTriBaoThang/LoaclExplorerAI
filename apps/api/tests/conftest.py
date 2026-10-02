@@ -1,10 +1,14 @@
 from collections.abc import Generator
+import os
 
 import pytest
 from fastapi.testclient import TestClient
 from sqlalchemy import create_engine
 from sqlalchemy.orm import Session, sessionmaker
 from sqlalchemy.pool import StaticPool
+
+os.environ.setdefault("APP_ENV", "test")
+os.environ.setdefault("ADMIN_API_KEY", "test-admin-key")
 from geoalchemy2.elements import WKTElement
 
 from app.db.base import Base
@@ -30,7 +34,7 @@ def client(db_session: Session) -> Generator[TestClient, None, None]:
         yield db_session
 
     app.dependency_overrides[get_db] = override_get_db
-    with TestClient(app) as test_client:
+    with TestClient(app, headers={"X-Admin-Key": os.environ["ADMIN_API_KEY"]}) as test_client:
         yield test_client
     app.dependency_overrides.clear()
 

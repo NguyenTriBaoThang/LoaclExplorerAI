@@ -37,7 +37,7 @@ class PlannerService:
         self.recommender = RecommendationService()
         self.explainer = ExplanationService()
 
-    def plan(self, request: PlanRequest) -> dict:
+    def plan(self, request: PlanRequest, user_id: str | None = None) -> dict:
         start_at, end_at = as_aware(request.start_at), as_aware(request.end_at)
         if end_at <= start_at or start_at < datetime.now(timezone.utc):
             raise NoFeasiblePlan("The trip must start in the future and end after it starts")
@@ -46,11 +46,18 @@ class PlannerService:
         by_id = {experience.id: experience for experience in experiences}
         if any(experience_id not in by_id for experience_id in request.locked_experience_ids):
             raise NoFeasiblePlan("A locked experience does not exist")
+        poi_ids = {experience.poi_id for experience in experiences}
+        if any(poi_id not in poi_ids for poi_id in request.locked_poi_ids):
+            raise NoFeasiblePlan("A locked POI does not exist or has no experience")
 
         chosen: list[dict] = []
         chosen_experience_ids: set[str] = set()
+        chosen_poi_ids: set[str] = set()
         cursor = start_at
-        previous_poi: tuple[float, float] | None = None
+        previous_poi: tuple[float, float] | None = (
+            (request.origin_latitude, request.origin_longitude)
+            if request.origin_latitude is not None and request.origin_longitude is not None else None
+        )
         total_cost = 0
         total_travel = 0
         routes: list[dict] = []
@@ -67,7 +74,9 @@ class PlannerService:
             for experience in pool:
                 if experience.id in chosen_experience_ids:
                     continue
-                locked = experience.id in request.locked_experience_ids
+                locked = experience.id in request.locked_experience_ids or (
+                    experience.poi_id in request.locked_poi_ids and experience.poi_id not in chosen_poi_ids
+                )
                 cost = experience.price_vnd * request.group_size if experience.price_basis == PriceBasis.PER_PERSON.value else experience.price_vnd
                 if total_cost + cost > request.budget_vnd:
                     continue
@@ -85,6 +94,17 @@ class PlannerService:
                         leg, travel = None, 0
                     if slot_start < cursor + timedelta(minutes=travel):
                         continue
+                    return_leg = None
+                    return_travel = 0
+                    if request.destination_latitude is not None and request.destination_longitude is not None:
+                        return_leg = self.routing.get_route(
+                            (experience.poi.latitude, experience.poi.longitude),
+                            (request.destination_latitude, request.destination_longitude),
+                            request.transport_mode,
+                        )
+                        return_travel = return_leg.duration_min
+                        if slot_end + timedelta(minutes=return_travel) > end_at:
+                            continue
                     capacity_known = self.availability.is_capacity_known(slot)
                     candidates.append({
                         "experience": experience,
@@ -96,6 +116,8 @@ class PlannerService:
                         "leg": leg,
                         "travel": travel,
                         "capacity_known": capacity_known,
+                        "return_leg": return_leg,
+                        "return_travel": return_travel,
                     })
             next_item = self.engine.plan(candidates)
             if not next_item:
@@ -106,8 +128,9 @@ class PlannerService:
             if next_item["leg"]:
                 total_travel += next_item["travel"]
                 routes.append({
-                    "from_experience_id": chosen[-1]["experience"].id,
+                    "from_experience_id": chosen[-1]["experience"].id if chosen else None,
                     "to_experience_id": experience.id,
+                    "from_label": None if chosen else (request.origin_label or "Điểm xuất phát"),
                     "distance_m": next_item["leg"].distance_m,
                     "duration_min": next_item["leg"].duration_min,
                     "provider": next_item["leg"].provider,
@@ -115,6 +138,7 @@ class PlannerService:
                 })
             chosen.append({**next_item, "arrival": slot_start})
             chosen_experience_ids.add(experience.id)
+            chosen_poi_ids.add(experience.poi_id)
             total_cost += next_item["cost"]
             cursor = slot_end
             previous_poi = (experience.poi.latitude, experience.poi.longitude)
@@ -126,8 +150,25 @@ class PlannerService:
                 unknown_capacity = True
                 reason_codes.add("CAPACITY_UNKNOWN")
 
-        if not chosen or any(item not in chosen_experience_ids for item in request.locked_experience_ids):
+        if not chosen or any(item not in chosen_experience_ids for item in request.locked_experience_ids) or not set(request.locked_poi_ids).issubset(chosen_poi_ids):
             raise NoFeasiblePlan("No itinerary satisfies time, capacity, and budget constraints")
+
+        estimated_return_at = as_aware(chosen[-1]["slot"].end_at)
+        if request.destination_latitude is not None and request.destination_longitude is not None:
+            final = chosen[-1]
+            route = final["return_leg"]
+            if route:
+                total_travel += final["return_travel"]
+                estimated_return_at += timedelta(minutes=final["return_travel"])
+                routes.append({
+                    "from_experience_id": final["experience"].id,
+                    "to_experience_id": None,
+                    "to_label": request.destination_label or "Điểm về",
+                    "distance_m": route.distance_m,
+                    "duration_min": route.duration_min,
+                    "provider": route.provider,
+                    "is_realtime": route.is_realtime,
+                })
 
         requested_intents = {tag for tag, weight in request.intent_weights.items() if weight > 0}
         provided_intents = {normalize_intent_tag(tag) for item in chosen for tag in item["experience"].intent_tags}
@@ -135,11 +176,17 @@ class PlannerService:
         lost = sorted(requested_intents - set(preserved))
         status = ItineraryStatus.TENTATIVE.value if unknown_capacity else ItineraryStatus.FEASIBLE.value
         itinerary = Itinerary(
-            id=str(uuid4()), group_size=request.group_size, budget_vnd=request.budget_vnd,
+            id=str(uuid4()), user_id=user_id, group_size=request.group_size, budget_vnd=request.budget_vnd,
             start_at=start_at, end_at=end_at, status=status,
             planned_date=start_at.date(), start_time=start_at, return_deadline=end_at,
             travel_mode=request.transport_mode, target_intents=request.intent_weights, current_version=1,
-            constraints={"transport_mode": request.transport_mode, "intent_weights": request.intent_weights, "locked_experience_ids": request.locked_experience_ids},
+            origin_latitude=request.origin_latitude, origin_longitude=request.origin_longitude,
+            destination_latitude=request.destination_latitude, destination_longitude=request.destination_longitude,
+            constraints={"transport_mode": request.transport_mode, "intent_weights": request.intent_weights,
+                         "locked_experience_ids": request.locked_experience_ids, "locked_poi_ids": request.locked_poi_ids,
+                         "origin_latitude": request.origin_latitude, "origin_longitude": request.origin_longitude,
+                         "destination_latitude": request.destination_latitude, "destination_longitude": request.destination_longitude,
+                         "origin_label": request.origin_label, "destination_label": request.destination_label},
             estimated_cost_vnd=total_cost, data_mode="simulated",
         )
         self.db.add(itinerary)
@@ -185,6 +232,9 @@ class PlannerService:
             "feasibility_status": status,
             "estimated_cost_vnd": total_cost,
             "total_travel_min": total_travel,
+            "start_at": start_at,
+            "return_deadline": end_at,
+            "estimated_return_at": estimated_return_at,
             "stops": response_stops,
             "routes": routes,
             "explanation": self.explainer.explain(sorted(reason_codes), preserved, lost),
@@ -214,14 +264,33 @@ class PlannerService:
         stops = [self._stop_dict(stop, stop.experience, stop.slot, stop.position) for stop in itinerary.stops]
         routes = []
         travel = 0
+        mode = itinerary.constraints.get("transport_mode", "driving")
+        if stops and itinerary.origin_latitude is not None and itinerary.origin_longitude is not None:
+            first = stops[0]
+            route = self.routing.get_route((itinerary.origin_latitude, itinerary.origin_longitude),
+                                           (first["poi"]["latitude"], first["poi"]["longitude"]), mode)
+            travel += route.duration_min
+            routes.append({"from_experience_id": None, "to_experience_id": first["experience_id"],
+                           "from_label": itinerary.constraints.get("origin_label") or "Điểm xuất phát",
+                           "distance_m": route.distance_m, "duration_min": route.duration_min,
+                           "provider": route.provider, "is_realtime": route.is_realtime})
         for previous, current in zip(stops, stops[1:]):
             route = self.routing.get_route(
                 (previous["poi"]["latitude"], previous["poi"]["longitude"]),
                 (current["poi"]["latitude"], current["poi"]["longitude"]),
-                itinerary.constraints.get("transport_mode", "driving"),
+                mode,
             )
             travel += route.duration_min
             routes.append({"from_experience_id": previous["experience_id"], "to_experience_id": current["experience_id"], "distance_m": route.distance_m, "duration_min": route.duration_min, "provider": route.provider, "is_realtime": route.is_realtime})
+        if stops and itinerary.destination_latitude is not None and itinerary.destination_longitude is not None:
+            last = stops[-1]
+            route = self.routing.get_route((last["poi"]["latitude"], last["poi"]["longitude"]),
+                                           (itinerary.destination_latitude, itinerary.destination_longitude), mode)
+            travel += route.duration_min
+            routes.append({"from_experience_id": last["experience_id"], "to_experience_id": None,
+                           "to_label": itinerary.constraints.get("destination_label") or "Điểm về",
+                           "distance_m": route.distance_m, "duration_min": route.duration_min,
+                           "provider": route.provider, "is_realtime": route.is_realtime})
         reasons = ["SIMULATED_DATA", "MOCK_ROUTING", "SLOT_AVAILABLE"]
         if any(not stop["availability_known"] for stop in stops):
             reasons.append("CAPACITY_UNKNOWN")
@@ -233,5 +302,8 @@ class PlannerService:
             "request_id": itinerary.id, "itinerary_id": itinerary.id, "data_mode": itinerary.data_mode,
             "data_as_of": itinerary.created_at, "feasibility_status": itinerary.status,
             "estimated_cost_vnd": itinerary.estimated_cost_vnd, "total_travel_min": travel, "stops": stops,
+            "start_at": as_aware(itinerary.start_time or itinerary.start_at),
+            "return_deadline": as_aware(itinerary.return_deadline or itinerary.end_at),
+            "estimated_return_at": (as_aware(stops[-1]["end_at"]) if stops else as_aware(itinerary.end_at)) + timedelta(minutes=(routes[-1]["duration_min"] if routes and routes[-1].get("to_experience_id") is None else 0)),
             "routes": routes, "explanation": self.explainer.explain(reasons, preserved, sorted(requested_intents - set(preserved))),
         }

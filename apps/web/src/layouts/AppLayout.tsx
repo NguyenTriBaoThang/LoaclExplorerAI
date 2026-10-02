@@ -1,6 +1,8 @@
 import { Compass, Sparkles, Menu, X, MapPin, Heart } from 'lucide-react'
 import { useState } from 'react'
 import { NavLink, Outlet } from 'react-router-dom'
+import { useAuth } from '../auth'
+import { logout } from '../api/client'
 
 const links = [
   { to: '/explore', label: 'Khám phá trải nghiệm' },
@@ -11,6 +13,7 @@ const links = [
 
 export function AppLayout() {
   const [open, setOpen] = useState(false)
+  const { user, setUser } = useAuth()
 
   return (
     <div className="app-frame-3d">
@@ -43,6 +46,9 @@ export function AppLayout() {
                 {link.label}
               </NavLink>
             ))}
+            {user && <NavLink to="/profile" onClick={() => setOpen(false)} className="nav-link-3d">Hồ sơ</NavLink>}
+            {user?.role === 'provider' && <NavLink to="/provider" onClick={() => setOpen(false)} className="nav-link-3d">Cổng cơ sở</NavLink>}
+            {user?.role === 'admin' && <NavLink to="/admin" onClick={() => setOpen(false)} className="nav-link-3d">Quản trị</NavLink>}
             <NavLink
               to="/planner"
               className="header-cta-3d"
@@ -51,6 +57,7 @@ export function AppLayout() {
               <span>Lên Lịch Ngay</span>
               <Sparkles size={15} />
             </NavLink>
+            {user ? <button className="nav-link-3d" type="button" onClick={async () => { await logout(); setUser(null); setOpen(false) }}>Đăng xuất</button> : <NavLink to="/login" onClick={() => setOpen(false)} className="nav-link-3d">Đăng nhập</NavLink>}
           </nav>
 
           <button

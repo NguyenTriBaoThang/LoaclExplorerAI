@@ -1,0 +1,45 @@
+import { createContext, useContext, useEffect, useMemo, useState, type ReactNode } from 'react'
+import { Navigate, Outlet, useLocation } from 'react-router-dom'
+import { getCurrentUser } from './api/client'
+import type { AuthUser } from './types'
+
+type AuthContextValue = {
+  user: AuthUser | null
+  loading: boolean
+  refresh: () => Promise<void>
+  setUser: (user: AuthUser | null) => void
+}
+
+const AuthContext = createContext<AuthContextValue | null>(null)
+
+export function AuthProvider({ children }: { children: ReactNode }) {
+  const [user, setUser] = useState<AuthUser | null>(null)
+  const [loading, setLoading] = useState(true)
+  const refresh = async () => {
+    try {
+      setUser(await getCurrentUser())
+    } catch {
+      setUser(null)
+    } finally {
+      setLoading(false)
+    }
+  }
+  useEffect(() => { void refresh() }, [])
+  const value = useMemo(() => ({ user, loading, refresh, setUser }), [user, loading])
+  return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>
+}
+
+export function useAuth() {
+  const value = useContext(AuthContext)
+  if (!value) throw new Error('useAuth must be used inside AuthProvider')
+  return value
+}
+
+export function RoleRoute({ roles }: { roles: AuthUser['role'][] }) {
+  const { user, loading } = useAuth()
+  const location = useLocation()
+  if (loading) return <div className="page-wrap page-loading-3d"><span className="loader-orbit" /><p>Đang kiểm tra phiên đăng nhập…</p></div>
+  if (!user) return <Navigate to="/login" replace state={{ from: location.pathname }} />
+  if (!roles.includes(user.role)) return <Navigate to="/" replace />
+  return <Outlet />
+}

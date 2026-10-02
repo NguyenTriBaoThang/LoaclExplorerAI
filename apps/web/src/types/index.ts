@@ -1,5 +1,16 @@
 export type DataMode = 'real' | 'simulated' | 'replay'
 
+export interface AuthUser {
+  id: string
+  email: string
+  display_name: string
+  role: 'traveler' | 'provider' | 'admin'
+  provider_id: string | null
+  phone: string | null
+  is_active: boolean
+  created_at: string
+}
+
 export interface POI {
   id: string
   name: string
@@ -9,6 +20,7 @@ export interface POI {
   category: string
   address: string
   verification_status: string
+  district?: string | null
   data_mode?: DataMode
 }
 
@@ -42,7 +54,9 @@ export interface Experience {
 
 export interface RouteLeg {
   from_experience_id: string | null
-  to_experience_id: string
+  to_experience_id: string | null
+  from_label?: string | null
+  to_label?: string | null
   distance_m: number
   duration_min: number
   provider: string
@@ -75,6 +89,9 @@ export interface Itinerary {
   feasibility_status: string
   estimated_cost_vnd: number
   total_travel_min: number
+  start_at?: string
+  return_deadline?: string
+  estimated_return_at?: string
   stops: ItineraryStop[]
   routes: RouteLeg[]
   explanation: {

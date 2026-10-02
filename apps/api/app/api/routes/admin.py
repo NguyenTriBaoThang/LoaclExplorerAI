@@ -1,0 +1,161 @@
+import re
+import unicodedata
+from datetime import datetime, timezone
+from difflib import SequenceMatcher
+from uuid import uuid4
+
+from fastapi import APIRouter, Depends, HTTPException, Query
+from sqlalchemy import func, select
+from sqlalchemy.orm import Session
+
+from app.api.dependencies import get_db, require_roles
+from app.models.entities import AuditLog, Evidence, Experience, ExperienceSlot, Itinerary, ItineraryStop, POI, Provider, User
+from app.schemas.management import AdminUserUpdateRequest, ModerationRequest, POIMergeRequest, ProviderCreateRequest
+from app.services.auth_service import hash_password
+
+router = APIRouter(prefix="/api/admin", tags=["administration"])
+
+
+def _normalized_name(value: str) -> str:
+    decomposed = unicodedata.normalize("NFKD", value.casefold().replace("đ", "d"))
+    unaccented = "".join(character for character in decomposed if not unicodedata.combining(character))
+    return re.sub(r"[^a-z0-9]+", "", unaccented)
+
+
+def _audit(db: Session, actor: User, action: str, target_type: str, target_id: str, details: dict | None = None) -> None:
+    db.add(AuditLog(id=str(uuid4()), actor_id=actor.id, action=action, target_type=target_type,
+                    target_id=target_id, details=details or {}, created_at=datetime.now(timezone.utc)))
+
+
+@router.get("/dashboard")
+def dashboard(user: User = Depends(require_roles("admin")), db: Session = Depends(get_db)):
+    return {
+        "users": db.scalar(select(func.count(User.id))) or 0,
+        "providers": db.scalar(select(func.count(Provider.id))) or 0,
+        "pending_experiences": db.scalar(select(func.count(Experience.id)).where(Experience.verification_status.in_(["pending", "simulated"]))) or 0,
+        "pending_pois": db.scalar(select(func.count(POI.id)).where(POI.verification_status.in_(["pending", "simulated"]))) or 0,
+        "pending_evidence": db.scalar(select(func.count(Evidence.id)).where(Evidence.verification_status == "pending")) or 0,
+        "unknown_slot_capacity": db.scalar(select(func.count(ExperienceSlot.id)).where(ExperienceSlot.available_reported.is_(None))) or 0,
+        "expired_evidence": db.scalar(select(func.count(Evidence.id)).where(Evidence.expires_at.is_not(None), Evidence.expires_at < datetime.now(timezone.utc))) or 0,
+    }
+
+
+@router.get("/users")
+def list_users(user: User = Depends(require_roles("admin")), db: Session = Depends(get_db), limit: int = Query(default=100, ge=1, le=500)):
+    records = db.scalars(select(User).order_by(User.created_at.desc()).limit(limit)).all()
+    return [{"id": item.id, "email": item.email, "display_name": item.display_name, "role": item.role,
+             "provider_id": item.provider_id, "is_active": item.is_active, "created_at": item.created_at} for item in records]
+
+
+@router.get("/providers")
+def list_providers(user: User = Depends(require_roles("admin")), db: Session = Depends(get_db), limit: int = Query(default=200, ge=1, le=500)):
+    rows = db.scalars(select(Provider).order_by(Provider.name).limit(limit)).all()
+    return [{"id": item.id, "name": item.name, "slug": item.slug, "verification_status": item.verification_status,
+             "is_active": item.is_active} for item in rows]
+
+
+@router.patch("/users/{user_id}")
+def update_user(user_id: str, payload: AdminUserUpdateRequest, actor: User = Depends(require_roles("admin")), db: Session = Depends(get_db)):
+    target = db.get(User, user_id)
+    if target is None:
+        raise HTTPException(status_code=404, detail={"code": "USER_NOT_FOUND", "message": "User not found."})
+    if target.id == actor.id and (not payload.is_active or payload.role != "admin"):
+        raise HTTPException(status_code=409, detail={"code": "SELF_LOCKOUT", "message": "You cannot deactivate or demote your own account."})
+    if payload.role == "provider":
+        if not payload.provider_id or db.get(Provider, payload.provider_id) is None:
+            raise HTTPException(status_code=422, detail={"code": "PROVIDER_REQUIRED", "message": "Provider accounts must be linked to a provider profile."})
+        target.provider_id = payload.provider_id
+    else:
+        target.provider_id = None
+    old_role, old_active = target.role, target.is_active
+    target.role, target.is_active = payload.role, payload.is_active
+    _audit(db, actor, "user.updated", "user", target.id, {"old_role": old_role, "role": target.role, "old_active": old_active, "is_active": target.is_active})
+    db.commit()
+    return {"id": target.id, "role": target.role, "provider_id": target.provider_id, "is_active": target.is_active}
+
+
+@router.post("/providers", status_code=201)
+def create_provider(payload: ProviderCreateRequest, actor: User = Depends(require_roles("admin")), db: Session = Depends(get_db)):
+    email = payload.email.strip().lower()
+    if db.scalar(select(User.id).where(User.email == email)):
+        raise HTTPException(status_code=409, detail={"code": "EMAIL_IN_USE", "message": "This email is already registered."})
+    slug_base = re.sub(r"[^a-z0-9]+", "-", payload.name.strip().lower()).strip("-")[:160] or "provider"
+    slug = f"{slug_base}-{uuid4().hex[:8]}"
+    provider = Provider(id=str(uuid4()), name=payload.name.strip(), slug=slug, address=payload.address,
+                        contact_phone=payload.contact_phone, contact_email=email, verification_status="pending")
+    db.add(provider)
+    db.flush()
+    account = User(id=str(uuid4()), email=email, display_name=payload.name.strip(), password_hash=hash_password(payload.password),
+                   role="provider", provider_id=provider.id)
+    db.add(account)
+    _audit(db, actor, "provider.created", "provider", provider.id, {"user_id": account.id})
+    db.commit()
+    return {"provider_id": provider.id, "user_id": account.id, "role": account.role, "verification_status": provider.verification_status}
+
+
+@router.get("/moderation")
+def moderation_queue(user: User = Depends(require_roles("admin")), db: Session = Depends(get_db), status: str = Query(default="pending", pattern="^(pending|simulated|verified|rejected|hidden)$")):
+    pois = db.scalars(select(POI).where(POI.verification_status == status).order_by(POI.created_at.desc()).limit(250)).all()
+    experiences = db.scalars(select(Experience).where(Experience.verification_status == status).order_by(Experience.created_at.desc()).limit(250)).all()
+    evidence = db.scalars(select(Evidence).where(Evidence.verification_status == status).order_by(Evidence.created_at.desc()).limit(250)).all()
+    return {
+        "pois": [{"id": item.id, "name": item.name, "address": item.address, "status": item.verification_status} for item in pois],
+        "experiences": [{"id": item.id, "title": item.title, "provider_id": item.provider_id, "status": item.verification_status} for item in experiences],
+        "evidence": [{"id": item.id, "source_uri": item.source_uri, "source_type": item.source_type, "expires_at": item.expires_at, "status": item.verification_status} for item in evidence],
+    }
+
+
+@router.patch("/moderation/{entity_type}/{entity_id}")
+def review_entity(entity_type: str, entity_id: str, payload: ModerationRequest, actor: User = Depends(require_roles("admin")), db: Session = Depends(get_db)):
+    models = {"poi": POI, "experience": Experience, "evidence": Evidence}
+    model = models.get(entity_type)
+    if model is None:
+        raise HTTPException(status_code=404, detail={"code": "ENTITY_TYPE_NOT_FOUND", "message": "Use poi, experience or evidence."})
+    entity = db.get(model, entity_id)
+    if entity is None:
+        raise HTTPException(status_code=404, detail={"code": "ENTITY_NOT_FOUND", "message": "Entity not found."})
+    entity.verification_status = {"approve": "verified", "reject": "rejected", "hide": "hidden"}[payload.action]
+    if isinstance(entity, Evidence):
+        entity.reviewed_by = actor.id
+        entity.reviewed_at = datetime.now(timezone.utc)
+    _audit(db, actor, f"{entity_type}.{payload.action}", entity_type, entity_id, {"note": payload.note, "new_status": entity.verification_status})
+    db.commit()
+    return {"entity_type": entity_type, "id": entity_id, "status": entity.verification_status}
+
+
+@router.get("/duplicates/pois")
+def duplicate_pois(actor: User = Depends(require_roles("admin")), db: Session = Depends(get_db)):
+    pois = db.scalars(select(POI).order_by(POI.name)).all()
+    pairs = []
+    for index, left in enumerate(pois):
+        left_name = _normalized_name(left.name)
+        for right in pois[index + 1:]:
+            right_name = _normalized_name(right.name)
+            score = SequenceMatcher(None, left_name, right_name).ratio()
+            if score >= 0.88:
+                pairs.append({"poi_a": {"id": left.id, "name": left.name}, "poi_b": {"id": right.id, "name": right.name}, "name_similarity": round(score, 3)})
+    return pairs
+
+
+@router.post("/duplicates/pois/merge")
+def merge_duplicate_pois(payload: POIMergeRequest, actor: User = Depends(require_roles("admin")), db: Session = Depends(get_db)):
+    if payload.keep_id == payload.duplicate_id:
+        raise HTTPException(status_code=422, detail={"code": "SAME_POI", "message": "The retained and duplicate POIs must differ."})
+    keep, duplicate = db.get(POI, payload.keep_id), db.get(POI, payload.duplicate_id)
+    if keep is None or duplicate is None:
+        raise HTTPException(status_code=404, detail={"code": "POI_NOT_FOUND", "message": "Both POIs must exist."})
+    experience_count = db.query(Experience).filter(Experience.poi_id == duplicate.id).update({Experience.poi_id: keep.id}, synchronize_session=False)
+    stop_count = db.query(ItineraryStop).filter(ItineraryStop.poi_id == duplicate.id).update({ItineraryStop.poi_id: keep.id}, synchronize_session=False)
+    duplicate.verification_status = "hidden"
+    _audit(db, actor, "poi.merged", "poi", duplicate.id, {"kept_poi_id": keep.id, "reason": payload.reason,
+        "experiences_relinked": experience_count, "stops_relinked": stop_count})
+    db.commit()
+    return {"kept_poi_id": keep.id, "hidden_duplicate_id": duplicate.id,
+            "experiences_relinked": experience_count, "stops_relinked": stop_count}
+
+
+@router.get("/audit")
+def audit_history(actor: User = Depends(require_roles("admin")), db: Session = Depends(get_db), limit: int = Query(default=100, ge=1, le=500)):
+    logs = db.scalars(select(AuditLog).order_by(AuditLog.created_at.desc()).limit(limit)).all()
+    return [{"id": item.id, "actor_id": item.actor_id, "action": item.action, "target_type": item.target_type,
+             "target_id": item.target_id, "details": item.details, "created_at": item.created_at} for item in logs]

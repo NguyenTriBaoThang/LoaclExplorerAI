@@ -19,6 +19,7 @@ from app.models.entities import (
     Itinerary,
     ItineraryStop,
     ItineraryVersion,
+    POI,
 )
 from app.prompts.registry import catalog
 from app.schemas.ai import ReplanProposal, ReplanProposals, XAIExplanation
@@ -132,7 +133,10 @@ class ReplanningService:
 
         experiences = self.db.scalars(
             select(Experience)
-            .where(Experience.id != affected.experience_id)
+            .join(POI)
+            .where(Experience.id != affected.experience_id,
+                   Experience.verification_status.in_(["verified", "simulated"]),
+                   POI.verification_status.in_(["verified", "simulated"]))
             .options(selectinload(Experience.slots), joinedload(Experience.poi))
         ).all()
         candidates: list[ReplanCandidate] = []
@@ -142,10 +146,20 @@ class ReplanningService:
                 (previous.poi.latitude, previous.poi.longitude),
                 (affected.poi.latitude, affected.poi.longitude), mode,
             ).duration_min
+        elif itinerary.origin_latitude is not None and itinerary.origin_longitude is not None:
+            old_travel += self.routing.get_route(
+                (itinerary.origin_latitude, itinerary.origin_longitude),
+                (affected.poi.latitude, affected.poi.longitude), mode,
+            ).duration_min
         if following:
             old_travel += self.routing.get_route(
                 (affected.poi.latitude, affected.poi.longitude),
                 (following.poi.latitude, following.poi.longitude), mode,
+            ).duration_min
+        elif itinerary.destination_latitude is not None and itinerary.destination_longitude is not None:
+            old_travel += self.routing.get_route(
+                (affected.poi.latitude, affected.poi.longitude),
+                (itinerary.destination_latitude, itinerary.destination_longitude), mode,
             ).duration_min
 
         for experience in experiences:
@@ -190,6 +204,13 @@ class ReplanningService:
                     ).duration_min
                     if slot_start < aware(previous.departure_at or previous.end_at) + timedelta(minutes=travel_before):
                         continue
+                elif itinerary.origin_latitude is not None and itinerary.origin_longitude is not None:
+                    travel_before = self.routing.get_route(
+                        (itinerary.origin_latitude, itinerary.origin_longitude),
+                        (experience.poi.latitude, experience.poi.longitude), mode,
+                    ).duration_min
+                    if slot_start < start_time + timedelta(minutes=travel_before):
+                        continue
                 elif slot_start < start_time:
                     continue
 
@@ -200,6 +221,13 @@ class ReplanningService:
                         (following.poi.latitude, following.poi.longitude), mode,
                     ).duration_min
                     if slot_end + timedelta(minutes=travel_after) > aware(following.arrival_at):
+                        continue
+                elif itinerary.destination_latitude is not None and itinerary.destination_longitude is not None:
+                    travel_after = self.routing.get_route(
+                        (experience.poi.latitude, experience.poi.longitude),
+                        (itinerary.destination_latitude, itinerary.destination_longitude), mode,
+                    ).duration_min
+                    if slot_end + timedelta(minutes=travel_after) > return_deadline:
                         continue
                 elif slot_end > return_deadline:
                     continue
@@ -231,13 +259,16 @@ class ReplanningService:
         return_deadline = aware(itinerary.return_deadline or itinerary.end_at).astimezone(LOCAL_TZ).strftime("%H:%M")
         old_experience = affected.experience
         last_stop = stops[-1]
-        solver_options = [
-            candidate.prompt_dict(
-                aware(candidate.slot.end_at if last_stop.id == affected.id else last_stop.departure_at)
-                .astimezone(LOCAL_TZ).strftime("%H:%M")
-            )
-            for candidate in candidates
-        ]
+        solver_options = []
+        for candidate in candidates:
+            final_stop_end = aware(candidate.slot.end_at if last_stop.id == affected.id else last_stop.departure_at)
+            if itinerary.destination_latitude is not None and itinerary.destination_longitude is not None:
+                final_poi = candidate.experience.poi if last_stop.id == affected.id else last_stop.poi
+                home_leg = self.routing.get_route((final_poi.latitude, final_poi.longitude),
+                    (itinerary.destination_latitude, itinerary.destination_longitude),
+                    {"motorcycle": "motorcycle", "car": "driving"}.get(itinerary.travel_mode, itinerary.travel_mode))
+                final_stop_end += timedelta(minutes=home_leg.duration_min)
+            solver_options.append(candidate.prompt_dict(final_stop_end.astimezone(LOCAL_TZ).strftime("%H:%M")))
         proposals = self.runner.run(
             "REPLAN_ADVISOR",
             {
@@ -249,7 +280,7 @@ class ReplanningService:
                     "budget_vnd": itinerary.budget_vnd,
                     "target_intents": itinerary.target_intents or {},
                     "return_deadline": return_deadline,
-                    "return_time_estimate_basis": "scheduled end of the final itinerary stop; no origin/home location is stored to estimate a return leg",
+                    "return_time_estimate_basis": "final scheduled stop plus route to stored destination when available; solver enforces the return deadline",
                 },
                 "cancelled_experience": {
                     "experience_id": old_experience.id,
@@ -297,7 +328,7 @@ class ReplanningService:
                         "travel_time_diff_min": recommended.travel_time_diff_min,
                         "estimated_return_time": recommended.estimated_return_time,
                         "comparison_options": [item.model_dump() for item in proposals.proposals],
-                        "estimated_return_time_basis": "scheduled end of final stop; no route-to-home location exists in the itinerary schema",
+                        "estimated_return_time_basis": "final scheduled stop plus route to stored destination when available",
                     },
                     "data_timestamp": now,
                 },
@@ -337,7 +368,7 @@ class ReplanningService:
             "disruption_summary": proposals.disruption_summary.model_dump(),
             "proposals": response_proposals,
             "xai_explanation": explanation.model_dump() if explanation else None,
-            "return_time_estimate_basis": "scheduled end of the final stop; the schema has no home/origin location for a return-leg estimate",
+            "return_time_estimate_basis": "final scheduled stop plus route to stored destination when available",
             "requires_user_confirmation": True,
         }
 
@@ -358,6 +389,7 @@ class ReplanningService:
         base_version = itinerary.current_version
         affected.experience_id = candidate.experience.id
         affected.poi_id = candidate.experience.poi_id
+        affected.poi = candidate.experience.poi
         affected.slot_id = candidate.slot.id
         affected.arrival_at = aware(candidate.slot.start_at)
         affected.start_at = aware(candidate.slot.start_at)
@@ -374,11 +406,19 @@ class ReplanningService:
 
         total_travel_min = 0
         ordered = sorted(stops, key=lambda stop: stop.stop_order)
+        mode = {"motorcycle": "motorcycle", "car": "driving"}.get(itinerary.travel_mode, itinerary.travel_mode)
+        if ordered and itinerary.origin_latitude is not None and itinerary.origin_longitude is not None:
+            first = ordered[0]
+            total_travel_min += self.routing.get_route((itinerary.origin_latitude, itinerary.origin_longitude),
+                (first.poi.latitude, first.poi.longitude), mode).duration_min
         for left, right in zip(ordered, ordered[1:]):
-            mode = {"motorcycle": "motorcycle", "car": "driving"}.get(itinerary.travel_mode, itinerary.travel_mode)
             total_travel_min += self.routing.get_route(
                 (left.poi.latitude, left.poi.longitude), (right.poi.latitude, right.poi.longitude), mode
             ).duration_min
+        if ordered and itinerary.destination_latitude is not None and itinerary.destination_longitude is not None:
+            last = ordered[-1]
+            total_travel_min += self.routing.get_route((last.poi.latitude, last.poi.longitude),
+                (itinerary.destination_latitude, itinerary.destination_longitude), mode).duration_min
         snapshot = [{
             "stop_id": stop.id,
             "stop_order": stop.stop_order,

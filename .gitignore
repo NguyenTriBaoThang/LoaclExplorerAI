@@ -447,3 +447,5 @@ dist/
 *.db
 postgres_data/
 redis_data/
+models/e5/*
+!models/e5/.gitkeep

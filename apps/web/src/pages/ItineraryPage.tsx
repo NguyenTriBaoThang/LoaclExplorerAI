@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useState, type FormEvent } from 'react'
 import {
   ArrowLeft,
   ArrowRight,
@@ -14,11 +14,12 @@ import {
   Car,
 } from 'lucide-react'
 import { Link, useLocation, useParams } from 'react-router-dom'
-import { apiErrorMessage, getItinerary } from '../api/client'
+import { acceptReplan, api, apiErrorMessage, createShareLink, getItinerary, getItineraryVersions, getNotifications, requestReplanAdvice, submitFeedback } from '../api/client'
 import { MapAdapter } from '../components/map/MapAdapter'
 import { SimulatedBadge } from '../components/common/StatusBadge'
 import { TiltCard3D } from '../components/3d/TiltCard3D'
 import type { Itinerary } from '../types'
+import { useAuth } from '../auth'
 
 const reasonCopy: Record<string, string> = {
   INTENT_MATCH: 'Ưu tiên trải nghiệm khớp chính xác với sở thích bạn đã chọn.',
@@ -46,6 +47,15 @@ export function ItineraryPage() {
   const [error, setError] = useState('')
   const [selectedId, setSelectedId] = useState('')
   const [copied, setCopied] = useState(false)
+  const { user } = useAuth()
+  const [shareToken, setShareToken] = useState('')
+  const [shareUrl, setShareUrl] = useState('')
+  const [notifications, setNotifications] = useState<Array<{ event_id: string; itinerary_id: string; stop_id: string; message: string; created_at?: string }>>([])
+  const [versions, setVersions] = useState<Array<{ version: number; stops: Array<{ experience_id: string; name: string; stop_order: number; cost_vnd: number; arrival_at?: string; departure_at?: string }>; total_cost_vnd: number; total_travel_time_s: number }>>([])
+  const [reviewText, setReviewText] = useState('')
+  const [rating, setRating] = useState(5)
+  const [notice, setNotice] = useState('')
+  const [advice, setAdvice] = useState<Record<string, { base_version: number; affected_stop_id: string; proposals: Array<{ code: 'B' | 'C'; title: string; candidate_experience_id: string; candidate_slot_id: string; cost_diff_vnd: number; travel_time_diff_min: number; estimated_return_time: string; recommendation_reason_vi: string; is_recommended: boolean }> }>>({})
 
   useEffect(() => {
     if (!id) return
@@ -55,10 +65,59 @@ export function ItineraryPage() {
       .finally(() => setLoading(false))
   }, [id])
 
-  const handleShare = () => {
-    navigator.clipboard.writeText(window.location.href)
-    setCopied(true)
-    setTimeout(() => setCopied(false), 2500)
+  useEffect(() => {
+    if (!user || !id) return
+    getItineraryVersions(id).then(setVersions).catch(() => setVersions([]))
+  }, [id, user?.id])
+
+  useEffect(() => {
+    if (!user || !id) return
+    let active = true
+    const refreshAlerts = () => getNotifications().then(rows => {
+      if (active) setNotifications(rows.filter(row => row.itinerary_id === id))
+    }).catch(() => undefined)
+    void refreshAlerts()
+    const timer = window.setInterval(refreshAlerts, 30000)
+    return () => { active = false; window.clearInterval(timer) }
+  }, [id, user?.id])
+
+  const handleShare = async () => {
+    try {
+      const result = await createShareLink(id)
+      const absolute = `${window.location.origin}${result.share_url}`
+      setShareToken(result.share_token)
+      setShareUrl(absolute)
+      try {
+        await navigator.clipboard.writeText(absolute)
+        setCopied(true)
+        setTimeout(() => setCopied(false), 2500)
+      } catch { setNotice('Link đã tạo bên dưới; hãy sao chép thủ công nếu trình duyệt chặn clipboard.') }
+    } catch {
+      setNotice('Đăng nhập bằng tài khoản chủ lịch để tạo liên kết chia sẻ.')
+    }
+  }
+
+  async function handleFeedback(event: FormEvent) {
+    event.preventDefault()
+    try { await submitFeedback(id, rating, reviewText); setReviewText(''); setNotice('Đã gửi đánh giá. Nhãn huấn luyện chỉ được tạo trong luồng AI riêng.') }
+    catch (reason) { setNotice(apiErrorMessage(reason)) }
+  }
+
+  async function getAdvice(eventId: string) {
+    try { const result = await requestReplanAdvice(id, eventId); setAdvice(old => ({ ...old, [eventId]: result as unknown as typeof old[string] })) }
+    catch { setNotice('Chưa thể tạo gợi ý đổi lịch. Cần cấu hình AI có Structured JSON output.') }
+  }
+
+  async function acceptProposal(eventId: string, proposal: NonNullable<typeof advice[string]['proposals']>[number]) {
+    const selected = advice[eventId]
+    if (!selected) return
+    try {
+      await acceptReplan(id, { event_id: eventId, affected_stop_id: selected.affected_stop_id, candidate_experience_id: proposal.candidate_experience_id, candidate_slot_id: proposal.candidate_slot_id, proposal_code: proposal.code, base_version: selected.base_version })
+      setNotice('Đã áp dụng phương án; lịch mới được lưu thành phiên bản tiếp theo.')
+      const updated = await getItinerary(id); setItinerary(updated)
+      getItineraryVersions(id).then(setVersions).catch(() => undefined)
+      setNotifications(old => old.filter(item => item.event_id !== eventId))
+    } catch { setNotice('Phương án không còn khả thi hoặc phiên bản lịch đã đổi. Hãy tải lại và xin gợi ý mới.') }
   }
 
   const handlePrint = () => {
@@ -101,11 +160,10 @@ export function ItineraryPage() {
 
   const activeStop = itinerary.stops.find((stop) => stop.experience_id === selectedId)
   const lastStop = itinerary.stops[itinerary.stops.length - 1]
+  const tripStartAt = itinerary.start_at || itinerary.stops[0]?.start_at
+  const estimatedReturnAt = itinerary.estimated_return_at || lastStop?.end_at
   const totalMinutes = lastStop
-    ? Math.round(
-        (new Date(lastStop.end_at).getTime() - new Date(itinerary.stops[0].start_at).getTime()) /
-          60000
-      )
+    ? Math.round((new Date(estimatedReturnAt || lastStop.end_at).getTime() - new Date(tripStartAt || itinerary.stops[0].start_at).getTime()) / 60000)
     : 0
 
   return (
@@ -127,6 +185,25 @@ export function ItineraryPage() {
           <SimulatedBadge />
         </div>
       </div>
+
+      {notice && <div className="inline-alert-3d" role="status">{notice}</div>}
+      {shareToken && <div className="inline-alert-3d">Link chia sẻ <input readOnly value={shareUrl} onFocus={event => event.currentTarget.select()} /> <span>{copied ? 'Đã sao chép' : ''}</span><button type="button" onClick={async () => { try { await api.delete(`/itineraries/${id}/share`); setShareToken(''); setShareUrl(''); setNotice('Đã thu hồi link chia sẻ.') } catch { setNotice('Không thể thu hồi liên kết.') } }}>Thu hồi link</button></div>}
+      {notifications.length > 0 && <section className="form-card-3d" style={{ marginTop: 16 }}><h2>Cảnh báo hủy ca</h2>{notifications.map(item => <div key={item.event_id} style={{ padding: 10, borderBottom: '1px solid #345' }}>
+        <p>{item.message}</p><button type="button" onClick={() => void getAdvice(item.event_id)}>Tìm phương án thay thế</button>
+        {advice[item.event_id]?.proposals.map(proposal => <article key={proposal.code} style={{ padding: 10, marginTop: 8, border: '1px solid #456' }}><h3>{proposal.code}: {proposal.title} {proposal.is_recommended ? '· Đề xuất' : ''}</h3><p>Chênh lệch {proposal.cost_diff_vnd.toLocaleString('vi-VN')} ₫ · di chuyển {proposal.travel_time_diff_min > 0 ? '+' : ''}{proposal.travel_time_diff_min} phút · về lúc {proposal.estimated_return_time}</p><p>{proposal.recommendation_reason_vi}</p><button type="button" onClick={() => void acceptProposal(item.event_id, proposal)}>Chọn phương án {proposal.code}</button></article>)}
+      </div>)}</section>}
+      {versions.length > 1 && <section className="form-card-3d" style={{ marginTop: 16 }}><h2>Thay đổi lịch cũ → lịch mới</h2>{(() => {
+        const oldVersion = versions[versions.length - 2]; const newVersion = versions[versions.length - 1]
+        const oldIds = oldVersion.stops.map(stop => stop.experience_id); const newIds = newVersion.stops.map(stop => stop.experience_id)
+        const added = newVersion.stops.filter(stop => !oldIds.includes(stop.experience_id))
+        const removed = oldVersion.stops.filter(stop => !newIds.includes(stop.experience_id))
+        const moved = newVersion.stops.flatMap(stop => {
+          const before = oldVersion.stops.find(old => old.experience_id === stop.experience_id)
+          if (!before || (before.stop_order === stop.stop_order && before.arrival_at === stop.arrival_at && before.departure_at === stop.departure_at)) return []
+          return [`${stop.name}: vị trí ${before.stop_order} → ${stop.stop_order}${before.arrival_at !== stop.arrival_at ? `, đến ${before.arrival_at ? timeLabel(before.arrival_at) : '?'} → ${stop.arrival_at ? timeLabel(stop.arrival_at) : '?'}` : ''}`]
+        })
+        return <><p>Phiên bản {oldVersion.version} → {newVersion.version} · chi phí {newVersion.total_cost_vnd - oldVersion.total_cost_vnd >= 0 ? '+' : ''}{(newVersion.total_cost_vnd - oldVersion.total_cost_vnd).toLocaleString('vi-VN')} ₫ · thời gian di chuyển {(newVersion.total_travel_time_s - oldVersion.total_travel_time_s) / 60} phút chênh lệch.</p><p>Điểm thêm: {added.map(stop => stop.name).join(', ') || 'không có'} · điểm bỏ: {removed.map(stop => stop.name).join(', ') || 'không có'}.</p>{moved.length > 0 && <p>Điểm đổi thứ tự/giờ: {moved.join('; ')}.</p>}</>
+      })()}</section>}
 
       {/* Main Heading & Feasibility Pill */}
       <div className="itinerary-header-3d">
@@ -166,7 +243,7 @@ export function ItineraryPage() {
             <strong>
               {Math.floor(totalMinutes / 60)}h {totalMinutes % 60}p
             </strong>
-            <span>Từ {timeLabel(itinerary.stops[0].start_at)} đến {timeLabel(lastStop.end_at)}</span>
+            <span>Từ {timeLabel(tripStartAt || itinerary.stops[0].start_at)} · dự kiến về {timeLabel(estimatedReturnAt || lastStop.end_at)} · hạn {timeLabel(itinerary.return_deadline || lastStop.end_at)}</span>
           </div>
         </TiltCard3D>
 
@@ -348,6 +425,12 @@ export function ItineraryPage() {
           </Link>
         </div>
       </div>
+
+      {user?.role === 'traveler' || user?.role === 'admin' ? <section className="form-card-3d" style={{ marginTop: 16 }}><h2>Đánh giá sau chuyến đi</h2><p>Đánh giá này được lưu riêng; API gán nhãn ML không thay thế việc gửi phản hồi.</p><form onSubmit={handleFeedback} className="form-fields-grid-2">
+        <label className="field-group-3d"><span>Điểm hài lòng</span><select value={rating} onChange={e => setRating(Number(e.target.value))}><option value={5}>5 - Rất hài lòng</option><option value={4}>4</option><option value={3}>3</option><option value={2}>2</option><option value={1}>1 - Chưa hài lòng</option></select></label>
+        <label className="field-group-3d"><span>Nhận xét</span><textarea required minLength={1} maxLength={4000} value={reviewText} onChange={e => setReviewText(e.target.value)} /></label>
+        <button className="btn-planner-submit">Gửi đánh giá</button>
+      </form></section> : <p style={{ marginTop: 16 }}>Đăng nhập tài khoản du khách để gửi đánh giá sau chuyến đi.</p>}
 
       {activeStop && (
         <div className="sr-only" aria-live="polite">
