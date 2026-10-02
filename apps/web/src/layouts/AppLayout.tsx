@@ -20,7 +20,7 @@ import { logout } from '../api/client'
 
 const links = [
   { to: '/explore', label: 'Khám phá trải nghiệm' },
-  { to: '/planner', label: 'Lập lịch trình thông minh' },
+  { to: '/planner', label: 'Lập lịch trình' },
   { to: '/provider', label: 'Dành cho đối tác' },
   { to: '/about', label: 'Về dự án & Công nghệ' },
 ]
@@ -68,8 +68,9 @@ export function AppLayout() {
 
   return (
     <div className="app-frame-3d">
-      {/* Floating Glass Navigation Header */}
-      <header className="site-header-3d">
+      {/* Floating Glass Navigation Header with Scroll Mask */}
+      <div className="header-outer-sticky">
+        <header className="site-header-3d">
         <div className="header-inner">
           <NavLink to="/" className="brand-3d" onClick={() => setOpen(false)}>
             <div className="brand-gem-3d">
@@ -320,6 +321,7 @@ export function AppLayout() {
           </div>
         )}
       </header>
+      </div>
 
       {/* Main Content Area */}
       <main className="main-content-3d">

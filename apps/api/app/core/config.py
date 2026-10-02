@@ -3,6 +3,10 @@ from functools import lru_cache
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
+from pathlib import Path
+_REPO_ROOT_ENV = Path(__file__).resolve().parents[3] / ".env"
+
+
 class Settings(BaseSettings):
     app_env: str = "development"
     database_url: str = "sqlite:///./local_explorer.sqlite3"
@@ -27,7 +31,7 @@ class Settings(BaseSettings):
     demo_traveler_password: str | None = None
     e5_model_path: str | None = None
 
-    model_config = SettingsConfigDict(env_file=".env", extra="ignore")
+    model_config = SettingsConfigDict(env_file=(str(_REPO_ROOT_ENV), ".env"), extra="ignore")
 
     @property
     def cors_origin_list(self) -> list[str]:

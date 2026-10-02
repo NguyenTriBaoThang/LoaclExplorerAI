@@ -15,6 +15,15 @@ export interface MapPoint {
 
 function FocusPoint({ point }: { point?: MapPoint }) {
   const map = useMap()
+
+  useEffect(() => {
+    map.invalidateSize()
+    const timer = setTimeout(() => {
+      map.invalidateSize()
+    }, 250)
+    return () => clearTimeout(timer)
+  }, [map])
+
   useEffect(() => {
     if (point) {
       map.flyTo([point.latitude, point.longitude], Math.max(map.getZoom(), 15), {
@@ -27,15 +36,15 @@ function FocusPoint({ point }: { point?: MapPoint }) {
 }
 
 const TILE_PRESETS = {
-  voyager: {
-    name: 'Sáng Thanh Lịch',
-    url: 'https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png',
-    attribution: '&copy; CartoDB &copy; OpenStreetMap contributors',
-  },
   dark: {
     name: 'Đêm Huyền Ảo',
-    url: 'https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png',
-    attribution: '&copy; CartoDB &copy; OpenStreetMap contributors',
+    url: 'https://server.arcgisonline.com/ArcGIS/rest/services/Canvas/World_Dark_Gray_Base/MapServer/tile/{z}/{y}/{x}',
+    attribution: '&copy; Esri &copy; OpenStreetMap contributors',
+  },
+  osm: {
+    name: 'Sáng Thanh Lịch',
+    url: 'https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',
+    attribution: '&copy; OpenStreetMap contributors',
   },
 }
 
@@ -50,13 +59,22 @@ export function MapAdapter({
   onSelect?: (id: string) => void
   className?: string
 }) {
-  const [styleMode, setStyleMode] = useState<'voyager' | 'dark'>('voyager')
+  const [styleMode, setStyleMode] = useState<'dark' | 'osm'>('dark')
   const selected = points.find((point) => point.id === selectedId)
   const center: LatLngExpression = [10.775, 106.700]
 
   return (
-    <div className={`map-shell-3d ${className}`}>
-      <MapContainer center={center} zoom={13} scrollWheelZoom className="map-canvas-3d">
+    <div
+      className={`map-shell-3d ${className}`}
+      style={{ height: '680px', minHeight: '500px', width: '100%', position: 'relative' }}
+    >
+      <MapContainer
+        center={center}
+        zoom={13}
+        scrollWheelZoom
+        className="map-canvas-3d"
+        style={{ height: '100%', width: '100%', minHeight: '500px' }}
+      >
         <TileLayer
           attribution={TILE_PRESETS[styleMode].attribution}
           url={TILE_PRESETS[styleMode].url}
@@ -122,7 +140,7 @@ export function MapAdapter({
         <button
           type="button"
           className="map-layer-toggle"
-          onClick={() => setStyleMode(styleMode === 'voyager' ? 'dark' : 'voyager')}
+          onClick={() => setStyleMode(styleMode === 'dark' ? 'osm' : 'dark')}
           title="Chuyển chế độ Sáng / Tối"
         >
           <Layers size={13} />
