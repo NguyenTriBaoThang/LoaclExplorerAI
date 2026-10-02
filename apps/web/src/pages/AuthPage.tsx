@@ -1,5 +1,16 @@
 import { useState, type FormEvent } from 'react'
 import { Link, useLocation, useNavigate, useSearchParams } from 'react-router-dom'
+import {
+  Compass,
+  Mail,
+  Lock,
+  User,
+  ArrowRight,
+  Eye,
+  EyeOff,
+  ShieldCheck,
+  AlertCircle,
+} from 'lucide-react'
 import { api, apiErrorMessage, login, registerAccount } from '../api/client'
 import { useAuth } from '../auth'
 
@@ -7,6 +18,7 @@ export function AuthPage({ register = false }: { register?: boolean }) {
   const [email, setEmail] = useState('')
   const [name, setName] = useState('')
   const [password, setPassword] = useState('')
+  const [showPassword, setShowPassword] = useState(false)
   const [error, setError] = useState('')
   const [busy, setBusy] = useState(false)
   const { setUser } = useAuth()
@@ -20,9 +32,11 @@ export function AuthPage({ register = false }: { register?: boolean }) {
     setBusy(true)
     setError('')
     try {
-      setUser(register
-        ? await registerAccount(email, name, password)
-        : await login(email, password))
+      setUser(
+        register
+          ? await registerAccount(email, name, password)
+          : await login(email, password)
+      )
       navigate(destination, { replace: true })
     } catch (reason) {
       setError(apiErrorMessage(reason))
@@ -31,24 +45,173 @@ export function AuthPage({ register = false }: { register?: boolean }) {
     }
   }
 
-  return <div className="page-wrap" style={{ maxWidth: 560, paddingTop: 48 }}>
-    <section className="form-card-3d">
-      <div className="form-card-header"><span className="step-num">LE</span><div>
-        <h1>{register ? 'Tạo tài khoản du khách' : 'Đăng nhập Local Explorer'}</h1>
-        <p>Email và mật khẩu hoặc tiếp tục bằng Google.</p>
-      </div></div>
-      <form onSubmit={submit} className="form-fields-grid-2">
-        {register && <label className="field-group-3d"><span>Họ tên</span><input required minLength={2} value={name} onChange={e => setName(e.target.value)} autoComplete="name" /></label>}
-        <label className="field-group-3d"><span>Email</span><input required type="email" value={email} onChange={e => setEmail(e.target.value)} autoComplete="email" /></label>
-        <label className="field-group-3d"><span>Mật khẩu</span><input required type="password" minLength={register ? 12 : 1} value={password} onChange={e => setPassword(e.target.value)} autoComplete={register ? 'new-password' : 'current-password'} /></label>
-        {(error || (searchParams.get('error') ? 'Đăng nhập Google chưa thành công. Kiểm tra cấu hình OAuth hoặc trạng thái email.' : '')) && <div className="form-alert-3d" style={{ gridColumn: '1 / -1' }}>{error || 'Đăng nhập Google chưa thành công. Kiểm tra cấu hình OAuth hoặc trạng thái email.'}</div>}
-        <button className="btn-planner-submit" type="submit" disabled={busy}>{busy ? 'Đang xử lý…' : register ? 'Tạo tài khoản' : 'Đăng nhập'}</button>
-      </form>
-      <a className="btn-secondary-3d" href={`${api.defaults.baseURL}/auth/google/start`} style={{ display: 'block', textAlign: 'center', marginTop: 12 }}>Tiếp tục bằng Google</a>
-      <p style={{ marginTop: 18 }}>{register ? 'Đã có tài khoản?' : 'Chưa có tài khoản?'}{' '}
-        <Link to={register ? '/login' : '/register'}>{register ? 'Đăng nhập' : 'Đăng ký'}</Link>
-      </p>
-      <small>Google login cần quản trị viên cấu hình OAuth client trong môi trường triển khai.</small>
-    </section>
-  </div>
+  const oauthError = searchParams.get('error')
+    ? 'Đăng nhập Google chưa thành công. Vui lòng kiểm tra cấu hình OAuth.'
+    : ''
+
+  return (
+    <div className="auth-page-container">
+      {/* Ambient background glow orbs */}
+      <div className="auth-glow-orb-1" />
+      <div className="auth-glow-orb-2" />
+
+      <div className="auth-card-wrapper animate-fadeIn">
+        {/* Brand Banner */}
+        <div className="auth-brand-header">
+          <Link to="/" className="auth-brand-logo">
+            <div className="brand-gem-3d">
+              <Compass size={24} className="brand-compass" />
+              <div className="gem-glow" />
+            </div>
+          </Link>
+          <h1 className="auth-heading">
+            {register ? 'Tạo tài khoản du khách' : 'Chào mừng bạn trở lại'}
+          </h1>
+          <p className="auth-subtext">
+            {register
+              ? 'Khám phá TP. Hồ Chí Minh theo nhịp đi và sở thích cá nhân của bạn'
+              : 'Đăng nhập để xem lại lịch trình đã lưu và đồng bộ trải nghiệm'}
+          </p>
+        </div>
+
+        {/* Tab Switcher */}
+        <div className="auth-tab-strip">
+          <Link
+            to="/login"
+            className={`auth-tab-btn ${!register ? 'auth-tab-active' : ''}`}
+          >
+            Đăng nhập
+          </Link>
+          <Link
+            to="/register"
+            className={`auth-tab-btn ${register ? 'auth-tab-active' : ''}`}
+          >
+            Tạo tài khoản
+          </Link>
+        </div>
+
+        {(error || oauthError) && (
+          <div className="auth-alert-banner">
+            <AlertCircle size={16} className="text-amber flex-shrink-0" />
+            <span>{error || oauthError}</span>
+          </div>
+        )}
+
+        <form onSubmit={submit} className="auth-form-body">
+          {register && (
+            <div className="auth-field-group">
+              <label htmlFor="auth-name">Họ và tên</label>
+              <div className="auth-input-shell">
+                <User size={16} className="auth-input-icon" />
+                <input
+                  id="auth-name"
+                  required
+                  minLength={2}
+                  value={name}
+                  onChange={(e) => setName(e.target.value)}
+                  placeholder="Ví dụ: Nguyễn Văn An"
+                  autoComplete="name"
+                />
+              </div>
+            </div>
+          )}
+
+          <div className="auth-field-group">
+            <label htmlFor="auth-email">Địa chỉ Email</label>
+            <div className="auth-input-shell">
+              <Mail size={16} className="auth-input-icon" />
+              <input
+                id="auth-email"
+                required
+                type="email"
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
+                placeholder="name@example.com"
+                autoComplete="email"
+              />
+            </div>
+          </div>
+
+          <div className="auth-field-group">
+            <div className="field-label-split">
+              <label htmlFor="auth-password">Mật khẩu</label>
+              {register && (
+                <span className="auth-hint-text">Ít nhất 12 ký tự</span>
+              )}
+            </div>
+            <div className="auth-input-shell">
+              <Lock size={16} className="auth-input-icon" />
+              <input
+                id="auth-password"
+                required
+                type={showPassword ? 'text' : 'password'}
+                minLength={register ? 12 : 1}
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                placeholder={register ? 'Nhập mật khẩu an toàn...' : 'Nhập mật khẩu của bạn...'}
+                autoComplete={register ? 'new-password' : 'current-password'}
+              />
+              <button
+                type="button"
+                className="toggle-password-btn"
+                onClick={() => setShowPassword(!showPassword)}
+                aria-label={showPassword ? 'Ẩn mật khẩu' : 'Hiện mật khẩu'}
+              >
+                {showPassword ? <EyeOff size={16} /> : <Eye size={16} />}
+              </button>
+            </div>
+          </div>
+
+          <button className="btn-auth-submit" type="submit" disabled={busy}>
+            <span>{busy ? 'Đang xác thực...' : register ? 'Tạo Tài Khoản Ngay' : 'Đăng Nhập'}</span>
+            <ArrowRight size={17} />
+          </button>
+        </form>
+
+        {/* Divider */}
+        <div className="auth-divider-line">
+          <span>HOẶC TIẾP TỤC VỚI</span>
+        </div>
+
+        {/* Google OAuth Button */}
+        <a
+          className="google-oauth-btn"
+          href={`${api.defaults.baseURL}/auth/google/start`}
+        >
+          <svg className="google-icon-svg" viewBox="0 0 24 24" width="18" height="18">
+            <path
+              fill="#4285F4"
+              d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"
+            />
+            <path
+              fill="#34A853"
+              d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"
+            />
+            <path
+              fill="#FBBC05"
+              d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.06H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.94l2.85-2.22.81-.63z"
+            />
+            <path
+              fill="#EA4335"
+              d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.06l3.66 2.84c.87-2.6 3.3-4.52 6.16-4.52z"
+            />
+          </svg>
+          <span>Tiếp tục bằng tài khoản Google</span>
+        </a>
+
+        {/* Footer Notes */}
+        <div className="auth-card-footer">
+          <p className="switch-auth-link">
+            {register ? 'Đã có tài khoản?' : 'Chưa có tài khoản?'}{' '}
+            <Link to={register ? '/login' : '/register'}>
+              {register ? 'Đăng nhập ngay' : 'Đăng ký miễn phí'}
+            </Link>
+          </p>
+          <span className="auth-oauth-note">
+            <ShieldCheck size={12} className="text-emerald" /> Dữ liệu được bảo mật an toàn theo tiêu chuẩn OpenID
+          </span>
+        </div>
+      </div>
+    </div>
+  )
 }
