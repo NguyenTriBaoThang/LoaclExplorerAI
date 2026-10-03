@@ -3670,6 +3670,69 @@ a {
   color: var(--tx-mint);
 }
 
+.address-resolve-row {
+  display: flex;
+  gap: 8px;
+  width: 100%;
+}
+
+.address-resolve-row input {
+  min-width: 0;
+  flex: 1;
+}
+
+.btn-geocode {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
+  padding: 8px 10px;
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-md);
+  color: var(--tx-emerald);
+  background: var(--bg-card);
+  cursor: pointer;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.btn-geocode:disabled {
+  cursor: wait;
+  opacity: 0.65;
+}
+
+.address-result-item {
+  width: 100%;
+  padding: 8px 10px;
+  text-align: left;
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-sm);
+  color: var(--text-secondary);
+  background: var(--bg-card);
+  cursor: pointer;
+  font-size: 12px;
+}
+
+.address-result-active {
+  border-color: var(--tx-emerald);
+  color: var(--tx-emerald);
+}
+
+.address-source-note,
+.routing-provider-note {
+  color: var(--text-muted);
+  font-size: 11px;
+}
+
+.address-source-note a {
+  color: var(--tx-mint);
+  text-decoration: underline;
+}
+
+.routing-provider-note {
+  margin: 12px 0 0;
+}
+
 /* AI Explanation Box */
 .itinerary-explanation-card-3d {
   margin-top: 40px;
@@ -6346,6 +6409,53 @@ a {
   font-size: 12px;
   color: var(--text-dim);
   margin-top: 8px;
+}
+
+.route-estimate-list {
+  display: grid;
+  gap: 0.65rem;
+  margin-top: 1rem;
+}
+
+.route-estimate-list h3 {
+  margin: 0;
+  font-size: 0.9rem;
+}
+
+.route-estimate-card {
+  display: grid;
+  gap: 0.55rem;
+  border: 1px solid var(--border-color, rgba(148, 163, 184, 0.2));
+  border-radius: 0.8rem;
+  padding: 0.75rem;
+  background: var(--surface-glass, rgba(15, 23, 42, 0.35));
+}
+
+.route-estimate-heading,
+.route-estimate-meta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.45rem 0.75rem;
+}
+
+.route-estimate-heading strong {
+  flex: 1 1 12rem;
+  font-size: 0.82rem;
+}
+
+.route-estimate-heading span,
+.route-estimate-meta {
+  color: var(--text-muted, #94a3b8);
+  font-size: 0.72rem;
+}
+
+.route-estimate-meta a {
+  color: var(--color-emerald, #34d399);
+}
+
+.route-estimate-expired {
+  color: #fbbf24;
 }
 
 .timeline-date-chip {

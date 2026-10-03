@@ -16,9 +16,9 @@ import {
   Search,
 } from 'lucide-react'
 import { useNavigate } from 'react-router-dom'
-import { apiErrorMessage, createItinerary, getPOIs } from '../api/client'
+import { apiErrorMessage, createItinerary, geocodeAddress, getPOIs, getRoutingCapabilities } from '../api/client'
 import { TiltCard3D } from '../components/3d/TiltCard3D'
-import type { POI } from '../types'
+import type { GeocodeResponse, POI, RoutingCapabilities } from '../types'
 import { useTranslation } from '../i18n'
 
 const budgetPresets = [500000, 1000000, 2000000, 3500000]
@@ -49,30 +49,47 @@ export function PlannerPage() {
   ], [t, locale])
 
   const transportModes = useMemo(() => [
-    { id: 'driving', label: t('planner.transportMotorbike'), icon: '🛵', note: t('planner.transportMotorbikeNote') },
-    { id: 'walking', label: t('planner.transportWalking'), icon: '🚶', note: t('planner.transportWalkingNote') },
-    { id: 'bicycling', label: t('planner.transportBicycle'), icon: '🚲', note: t('planner.transportBicycleNote') },
-    { id: 'transit', label: t('planner.transportBus'), icon: '🚌', note: t('planner.transportBusNote') },
-  ], [t])
+    { id: 'motorcycle', label: locale === 'en' ? 'Motorcycle' : 'Xe máy', icon: '🛵', note: locale === 'en' ? 'Goong motorcycle profile' : 'Tuyến xe máy từ Goong' },
+    { id: 'car', label: locale === 'en' ? 'Car' : 'Ô tô', icon: '🚗', note: locale === 'en' ? 'Goong car profile' : 'Tuyến ô tô từ Goong' },
+    { id: 'walking', label: locale === 'en' ? 'Walking' : 'Đi bộ', icon: '🚶', note: locale === 'en' ? 'Goong walking profile' : 'Tuyến đi bộ từ Goong' },
+  ], [locale])
 
   const [date, setDate] = useState(tomorrow())
   const [startTime, setStartTime] = useState('09:00')
   const [endTime, setEndTime] = useState('16:00')
   const [groupSize, setGroupSize] = useState(2)
   const [budget, setBudget] = useState(1200000)
-  const [transport, setTransport] = useState('driving')
+  const [transport, setTransport] = useState('motorcycle')
   const [selectedIntents, setSelectedIntents] = useState<string[]>(['food', 'handicraft'])
   const [pois, setPois] = useState<POI[]>([])
   const [lockedPois, setLockedPois] = useState<string[]>([])
   const [poiSearch, setPoiSearch] = useState('')
   const [originId, setOriginId] = useState('')
   const [destinationId, setDestinationId] = useState('')
+  const [originAddress, setOriginAddress] = useState('')
+  const [destinationAddress, setDestinationAddress] = useState('')
+  const [originGeocode, setOriginGeocode] = useState<GeocodeResponse | null>(null)
+  const [destinationGeocode, setDestinationGeocode] = useState<GeocodeResponse | null>(null)
+  const [originResolved, setOriginResolved] = useState<GeocodeResponse['results'][number] | null>(null)
+  const [destinationResolved, setDestinationResolved] = useState<GeocodeResponse['results'][number] | null>(null)
+  const [geocoding, setGeocoding] = useState<'origin' | 'destination' | null>(null)
+  const [routingCapabilities, setRoutingCapabilities] = useState<RoutingCapabilities | null>(null)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
 
   useEffect(() => {
     void getPOIs().then(setPois).catch(() => setPois([]))
+    void getRoutingCapabilities().then((capabilities) => {
+      setRoutingCapabilities(capabilities)
+      setTransport((current) => capabilities.supported_modes.includes(current)
+        ? current
+        : capabilities.supported_modes[0] || current)
+    }).catch(() => undefined)
   }, [])
+
+  const visibleTransportModes = transportModes.filter((mode) =>
+    !routingCapabilities || routingCapabilities.supported_modes.includes(mode.id)
+  )
 
   const toggleIntent = (id: string) => {
     setSelectedIntents((current) =>
@@ -97,6 +114,33 @@ export function PlannerPage() {
     poi.address.toLowerCase().includes(poiSearch.toLowerCase())
   )
 
+  async function resolveAddress(which: 'origin' | 'destination') {
+    const address = which === 'origin' ? originAddress.trim() : destinationAddress.trim()
+    if (address.length < 3) {
+      setError(locale === 'en' ? 'Enter at least 3 characters for the address.' : 'Nhập địa chỉ tối thiểu 3 ký tự.')
+      return
+    }
+    setGeocoding(which)
+    setError('')
+    try {
+      const result = await geocodeAddress(address)
+      if (which === 'origin') {
+        setOriginGeocode(result)
+        setOriginResolved(null)
+      } else {
+        setDestinationGeocode(result)
+        setDestinationResolved(null)
+      }
+      if (result.results.length === 0) {
+        setError(locale === 'en' ? 'No address matches were returned. Refine the address.' : 'Không tìm thấy địa chỉ; hãy nhập cụ thể hơn.')
+      }
+    } catch (reason) {
+      setError(apiErrorMessage(reason))
+    } finally {
+      setGeocoding(null)
+    }
+  }
+
   async function submit(event: FormEvent) {
     event.preventDefault()
     setLoading(true)
@@ -105,6 +149,19 @@ export function PlannerPage() {
       const toIso = (value: string) => new Date(`${date}T${value}:00+07:00`).toISOString()
       const origin = pois.find((poi) => poi.id === originId)
       const destination = pois.find((poi) => poi.id === destinationId)
+      if (originAddress.trim() && !originResolved) {
+        throw new Error(locale === 'en' ? 'Choose a geocoding result for the origin address first.' : 'Hãy tìm và chọn kết quả địa chỉ điểm xuất phát trước.')
+      }
+      if (destinationAddress.trim() && !destinationResolved) {
+        throw new Error(locale === 'en' ? 'Choose a geocoding result for the return address first.' : 'Hãy tìm và chọn kết quả địa chỉ điểm về trước.')
+      }
+      const originPoint = originResolved ?? origin
+      const destinationPoint = destinationResolved ?? destination
+      if (!originPoint || !destinationPoint) {
+        throw new Error(locale === 'en'
+          ? 'Choose both a departure point and a return destination so the route and return deadline can be checked.'
+          : 'Hãy chọn cả điểm xuất phát và điểm về để kiểm tra đủ lộ trình và giờ về.')
+      }
       const result = await createItinerary({
         start_at: toIso(startTime),
         end_at: toIso(endTime),
@@ -114,21 +171,21 @@ export function PlannerPage() {
         intent_weights: Object.fromEntries(selectedIntents.map((intent) => [intent, 1])),
         locked_experience_ids: [],
         locked_poi_ids: lockedPois,
-        ...(origin
+        ...(originPoint
           ? {
-              origin_latitude: origin.latitude,
-              origin_longitude: origin.longitude,
-              origin_label: origin.name,
+              origin_latitude: originPoint.latitude,
+              origin_longitude: originPoint.longitude,
+              origin_label: 'formatted_address' in originPoint ? originPoint.formatted_address : originPoint.name,
             }
           : {}),
-        ...(destination
+        ...(destinationPoint
           ? {
-              destination_latitude: destination.latitude,
-              destination_longitude: destination.longitude,
-              destination_label: destination.name,
+              destination_latitude: destinationPoint.latitude,
+              destination_longitude: destinationPoint.longitude,
+              destination_label: 'formatted_address' in destinationPoint ? destinationPoint.formatted_address : destinationPoint.name,
             }
           : {}),
-      })
+      }, { allowSimulation: false })
       navigate(`/itinerary/${result.itinerary_id}`, { state: { itinerary: result } })
     } catch (reason) {
       setError(apiErrorMessage(reason))
@@ -324,7 +381,7 @@ export function PlannerPage() {
             </div>
 
             <div className="transport-mode-grid">
-              {transportModes.map((mode) => (
+              {visibleTransportModes.map((mode) => (
                 <button
                   key={mode.id}
                   type="button"
@@ -339,6 +396,13 @@ export function PlannerPage() {
                 </button>
               ))}
             </div>
+            {routingCapabilities && (
+              <p className="routing-provider-note">
+                {locale === 'en' ? 'Routing provider' : 'Nhà cung cấp tuyến đường'}: {routingCapabilities.provider}. {routingCapabilities.eta_is_realtime ? (locale === 'en' ? 'Live traffic ETA.' : 'ETA giao thông thời gian thực.') : (locale === 'en' ? 'ETAs are estimates, not live traffic.' : 'ETA là ước tính, không phải giao thông thời gian thực.')}
+                {!routingCapabilities.configured && ` · ${locale === 'en' ? 'Routing provider is not configured' : 'Chưa cấu hình nhà cung cấp tuyến đường'}`}
+                {routingCapabilities.geocoding_configured === false && ` · ${locale === 'en' ? `Geocoding provider/key unavailable (${routingCapabilities.geocoding_provider})` : `Nhà cung cấp/khóa geocoding chưa sẵn sàng (${routingCapabilities.geocoding_provider})`}`}
+              </p>
+            )}
           </div>
 
           {/* Section 04: Điểm xuất phát, Điểm về & Khóa POI */}
@@ -352,11 +416,16 @@ export function PlannerPage() {
             </div>
 
             <div className="form-fields-grid-2">
-              <label className="field-group-3d">
+              <div className="field-group-3d">
                 <span>
                   <MapPin size={14} className="text-emerald" /> {t('planner.originLabel')}
                 </span>
-                <select value={originId} onChange={(e) => setOriginId(e.target.value)}>
+                <select value={originId} onChange={(e) => {
+                  setOriginId(e.target.value)
+                  setOriginAddress('')
+                  setOriginResolved(null)
+                  setOriginGeocode(null)
+                }}>
                   <option value="">{t('planner.originDefault')}</option>
                   {pois.map((p) => (
                     <option key={p.id} value={p.id}>
@@ -364,13 +433,35 @@ export function PlannerPage() {
                     </option>
                   ))}
                 </select>
-              </label>
+                <div className="address-resolve-row">
+                  <input value={originAddress} placeholder={locale === 'en' ? 'Or enter a street address' : 'Hoặc nhập địa chỉ'} onChange={(event) => {
+                    setOriginAddress(event.target.value)
+                    setOriginId('')
+                    setOriginResolved(null)
+                    setOriginGeocode(null)
+                  }} />
+                  <button type="button" className="btn-geocode" disabled={geocoding !== null} onClick={() => void resolveAddress('origin')}>
+                    <Search size={14} /> {geocoding === 'origin' ? (locale === 'en' ? 'Searching…' : 'Đang tìm…') : (locale === 'en' ? 'Find' : 'Tìm')}
+                  </button>
+                </div>
+                {originGeocode?.results.map((result) => (
+                  <button type="button" className={`address-result-item ${originResolved?.place_id === result.place_id ? 'address-result-active' : ''}`} key={result.place_id || `${result.latitude},${result.longitude}`} onClick={() => setOriginResolved(result)}>
+                    {result.formatted_address}
+                  </button>
+                ))}
+                {originResolved && originGeocode && <small className="address-source-note">{originGeocode.provider} · {locale === 'en' ? 'age' : 'tuổi'} {originGeocode.age_seconds}s · {locale === 'en' ? 'valid until' : 'hạn'} {new Date(originGeocode.valid_until).toLocaleTimeString(locale === 'en' ? 'en-US' : 'vi-VN')} · <a href={originGeocode.source_uri} target="_blank" rel="noreferrer">{locale === 'en' ? 'source' : 'nguồn'}</a></small>}
+              </div>
 
-              <label className="field-group-3d">
+              <div className="field-group-3d">
                 <span>
                   <MapPin size={14} className="text-amber" /> {t('planner.destinationLabel')}
                 </span>
-                <select value={destinationId} onChange={(e) => setDestinationId(e.target.value)}>
+                <select value={destinationId} onChange={(e) => {
+                  setDestinationId(e.target.value)
+                  setDestinationAddress('')
+                  setDestinationResolved(null)
+                  setDestinationGeocode(null)
+                }}>
                   <option value="">{t('planner.destDefault')}</option>
                   {pois.map((p) => (
                     <option key={p.id} value={p.id}>
@@ -378,7 +469,24 @@ export function PlannerPage() {
                     </option>
                   ))}
                 </select>
-              </label>
+                <div className="address-resolve-row">
+                  <input value={destinationAddress} placeholder={locale === 'en' ? 'Or enter a return address' : 'Hoặc nhập địa chỉ điểm về'} onChange={(event) => {
+                    setDestinationAddress(event.target.value)
+                    setDestinationId('')
+                    setDestinationResolved(null)
+                    setDestinationGeocode(null)
+                  }} />
+                  <button type="button" className="btn-geocode" disabled={geocoding !== null} onClick={() => void resolveAddress('destination')}>
+                    <Search size={14} /> {geocoding === 'destination' ? (locale === 'en' ? 'Searching…' : 'Đang tìm…') : (locale === 'en' ? 'Find' : 'Tìm')}
+                  </button>
+                </div>
+                {destinationGeocode?.results.map((result) => (
+                  <button type="button" className={`address-result-item ${destinationResolved?.place_id === result.place_id ? 'address-result-active' : ''}`} key={result.place_id || `${result.latitude},${result.longitude}`} onClick={() => setDestinationResolved(result)}>
+                    {result.formatted_address}
+                  </button>
+                ))}
+                {destinationResolved && destinationGeocode && <small className="address-source-note">{destinationGeocode.provider} · {locale === 'en' ? 'age' : 'tuổi'} {destinationGeocode.age_seconds}s · {locale === 'en' ? 'valid until' : 'hạn'} {new Date(destinationGeocode.valid_until).toLocaleTimeString(locale === 'en' ? 'en-US' : 'vi-VN')} · <a href={destinationGeocode.source_uri} target="_blank" rel="noreferrer">{locale === 'en' ? 'source' : 'nguồn'}</a></small>}
+              </div>
             </div>
 
             {/* POI Locking Section with Card Selection */}

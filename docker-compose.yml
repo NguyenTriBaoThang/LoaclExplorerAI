@@ -36,7 +36,13 @@ services:
       DATABASE_URL: ${DATABASE_URL:-postgresql+psycopg://postgres:${POSTGRES_PASSWORD:-postgres}@db:5432/local_explorer}
       REDIS_URL: redis://redis:6379/0
       CORS_ORIGINS: http://localhost:${WEB_PORT:-5173}
-      ROUTING_PROVIDER: mock
+      ROUTING_PROVIDER: ${ROUTING_PROVIDER:-goong}
+      GEOCODING_PROVIDER: ${GEOCODING_PROVIDER:-goong}
+      GOONG_API_KEY: ${GOONG_API_KEY:-}
+      GOONG_API_BASE_URL: ${GOONG_API_BASE_URL:-https://rsapi.goong.io}
+      GOONG_TIMEOUT_SECONDS: ${GOONG_TIMEOUT_SECONDS:-8}
+      GOONG_ETA_TTL_SECONDS: ${GOONG_ETA_TTL_SECONDS:-300}
+      GEOCODE_CACHE_TTL_SECONDS: ${GEOCODE_CACHE_TTL_SECONDS:-86400}
       OPENAI_API_KEY: ${OPENAI_API_KEY:-}
       OPENAI_BASE_URL: ${OPENAI_BASE_URL:-https://api.openai.com/v1}
       OPENAI_MODEL: ${OPENAI_MODEL:-gpt-4o-mini}

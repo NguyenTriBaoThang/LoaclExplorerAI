@@ -471,7 +471,7 @@ Input:
   - Ngân sách: Budget_VND, Số người: Group_Size
   - Trọng số mục đích: Intent_Weights (thủ công, ẩm thực, văn hóa, thư giãn)
   - Phương tiện: Transport_Mode (xe máy, ô tô, đi bộ, xe buýt)
-  - Điểm xuất phát/đích tùy chọn & Danh sách địa điểm ghim cố định (Locked)
+  - Điểm xuất phát/đích về và danh sách địa điểm ghim cố định (Locked)
           │
           ▼
 Bước 1: Lọc Không gian Khả thi (Feasibility Pruning)
@@ -486,9 +486,9 @@ Bước 2: Chấm điểm Đa Mục tiêu & ML Tie-Breaking
           │
           ▼
 Bước 3: Tối ưu hóa Chuỗi Hành trình (Sequential Routing Optimization)
-  - Sử dụng Ma trận Cự ly Haversine kết hợp hệ số vận tốc đô thị theo phương tiện
-  - Tự động cộng thêm thời gian đệm di chuyển (buffer) giữa các quận
-  - Kiểm tra điều kiện ngặt nghèo về giờ về (Return Deadline Check) bao gồm chặng về điểm đích
+  - Lấy quãng đường, ETA và hình học tuyến từ Goong Directions API; geocode địa chỉ nhập thành điểm đi/đến
+  - ETA có nguồn, thời điểm tính và hạn cache; không quảng cáo là giao thông thời gian thực
+  - Kiểm tra giờ về bao gồm cả chặng cuối đến địa chỉ đích
           │
           ▼
 Output:
@@ -525,7 +525,8 @@ flowchart TB
         E5SearchEngine["Local Multilingual E5 Embeddings Service"]
         MLRankerEngine["XGBoost ML Ranker Service"]
         FloodRiskEngine["Saigon Flood Risk Model Service"]
-        RoutingEngine["Haversine Multi-modal Routing Engine"]
+        RoutingEngine["Goong Directions + Geocoding adapters"]
+        MockRoutingEngine["Mock routing (tests/demo only)"]
     end
 
     subgraph Persistence["Storage & Intelligence Layer"]
@@ -547,6 +548,7 @@ flowchart TB
     CatalogService --> E5SearchEngine
     HeuristicSolver --> MLRankerEngine
     HeuristicSolver --> RoutingEngine
+    RoutingEngine -. selected mock config .-> MockRoutingEngine
     ReplanningEngine --> PromptEngine
     ReplanningEngine --> MLRankerEngine
 
@@ -690,6 +692,8 @@ cd LoaclExplorerAI
 # 2. Tạo file cấu hình môi trường
 cp .env.example .env
 
+# 2a. Mở .env và đặt GOONG_API_KEY để bật routing/geocoding thật
+
 # 3. Khởi chạy toàn bộ hệ thống (Frontend + Backend + DB PostGIS + Redis)
 docker compose up --build
 ```
@@ -765,11 +769,18 @@ Tạo file `.env` tại thư mục gốc từ mẫu `.env.example`:
 | `APP_SIGNING_SECRET` | *(chuỗi ngẫu nhiên)* | Khóa ký token xác nhận 2 bước cho Provider AI |
 | `ADMIN_API_KEY` | *(tùy chọn)* | Khóa bảo mật gọi các endpoint AI quản trị viên |
 | `OPENAI_API_KEY` | *(tùy chọn)* | API key cho các prompt LLM (Hỗ trợ OpenAI hoặc các endpoint tương thích) |
+| `ROUTING_PROVIDER` | `goong` | Nhà cung cấp tuyến đường; `mock` chỉ dùng cho demo/kiểm thử |
+| `GEOCODING_PROVIDER` | `goong` | Nhà cung cấp geocoding địa chỉ |
+| `GOONG_API_KEY` | *(bắt buộc để dùng Goong)* | Key chỉ được API server gửi đến Directions/Geocoding, không đặt trong frontend |
+| `GOONG_ETA_TTL_SECONDS` | `300` | Thời hạn cache ETA trong tiến trình API; không phải tuổi dữ liệu giao thông |
+| `GEOCODE_CACHE_TTL_SECONDS` | `86400` | Thời hạn cache kết quả geocoding |
 | `OPENAI_BASE_URL` | `https://api.openai.com/v1` | URL endpoint của nhà cung cấp LLM |
 | `INSTALL_ML` | `true` | Bật tính năng nạp mô hình XGBoost Ranker & Flood Risk |
 | `INSTALL_E5` | `true` | Bật tính năng tìm kiếm ngữ nghĩa cục bộ Multilingual E5 |
 | `GOOGLE_CLIENT_ID` | *(tùy chọn)* | Client ID đăng nhập Google OAuth 2.0 PKCE |
 | `GOOGLE_CLIENT_SECRET` | *(tùy chọn)* | Client Secret đăng nhập Google |
+
+Planner yêu cầu chọn cả điểm xuất phát và điểm về để xét trọn chặng đi-về. Goong hỗ trợ xe máy, đi bộ và ô tô trong cấu hình hiện tại; transit/xe đạp không được quy đổi sang loại phương tiện khác. Tài liệu Directions V2 mô tả capability và bảng giá trị `vehicle` chưa hoàn toàn đồng nhất, vì vậy cần smoke-test với key/tài khoản Goong thật trước pilot. Thiếu key hoặc Goong lỗi thì API báo lỗi rõ ràng, không tự thay bằng ETA giả.
 
 ---
 

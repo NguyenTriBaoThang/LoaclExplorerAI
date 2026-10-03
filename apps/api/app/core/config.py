@@ -12,7 +12,13 @@ class Settings(BaseSettings):
     database_url: str = "sqlite:///./local_explorer.sqlite3"
     redis_url: str = "redis://localhost:6379/0"
     cors_origins: str = "http://localhost:5173"
-    routing_provider: str = "mock"
+    routing_provider: str = "goong"
+    geocoding_provider: str = "goong"
+    goong_api_key: str | None = None
+    goong_api_base_url: str = "https://rsapi.goong.io"
+    goong_timeout_seconds: float = 8.0
+    goong_eta_ttl_seconds: int = 300
+    geocode_cache_ttl_seconds: int = 86400
     openai_api_key: str | None = None
     openai_base_url: str = "https://api.openai.com/v1"
     openai_model: str = "gpt-4o-mini"

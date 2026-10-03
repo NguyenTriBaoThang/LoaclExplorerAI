@@ -9,6 +9,8 @@ from uuid import uuid4
 from zoneinfo import ZoneInfo
 
 from fastapi import APIRouter, Depends, Header, HTTPException
+
+from app.adapters.routing.provider import RoutingConfigurationError, RoutingProviderError
 from sqlalchemy import select
 from sqlalchemy.orm import Session, joinedload, selectinload
 
@@ -210,6 +212,10 @@ def get_replan_advice(
         _not_found(str(error))
     except ValueError as error:
         raise HTTPException(status_code=409, detail={"code": "REPLAN_NOT_AVAILABLE", "message": str(error)}) from error
+    except RoutingConfigurationError as error:
+        raise HTTPException(status_code=503, detail={"code": "ROUTING_NOT_CONFIGURED", "message": str(error)}) from error
+    except RoutingProviderError as error:
+        raise HTTPException(status_code=502, detail={"code": "ROUTING_PROVIDER_ERROR", "message": str(error)}) from error
 
 
 @router.post("/api/itineraries/{itinerary_id}/replan-advice/accept")
@@ -236,6 +242,10 @@ def accept_replan(
         _not_found(str(error))
     except ValueError as error:
         raise HTTPException(status_code=409, detail={"code": "REPLAN_NOT_AVAILABLE", "message": str(error)}) from error
+    except RoutingConfigurationError as error:
+        raise HTTPException(status_code=503, detail={"code": "ROUTING_NOT_CONFIGURED", "message": str(error)}) from error
+    except RoutingProviderError as error:
+        raise HTTPException(status_code=502, detail={"code": "ROUTING_PROVIDER_ERROR", "message": str(error)}) from error
 
 
 @router.post("/api/providers/{provider_id}/slot-assistant/preview")

@@ -32,7 +32,7 @@ import {
   requestReplanAdvice,
   submitFeedback,
 } from '../api/client'
-import { MapAdapter } from '../components/map/MapAdapter'
+import { MapAdapter, type MapPoint } from '../components/map/MapAdapter'
 import { SimulatedBadge } from '../components/common/StatusBadge'
 import { TiltCard3D } from '../components/3d/TiltCard3D'
 import type { Itinerary } from '../types'
@@ -46,6 +46,7 @@ const getReasonCopy = (code: string, locale: string): string => {
     SLOT_AVAILABLE: 'Khung giờ trải nghiệm khớp với mốc thời gian di chuyển của chuyến đi.',
     CAPACITY_UNKNOWN: 'Sức chứa chưa được cập nhật chính thức; hãy liên hệ trước khi đến.',
     MOCK_ROUTING: 'Thời gian di chuyển là ước tính theo ma trận mô phỏng, không phải dữ liệu giao thông thời gian thực.',
+    GOONG_ROUTING: 'Quãng đường và thời gian đến dự kiến lấy từ Goong Directions; đây không phải dữ liệu giao thông trực tiếp.',
     SIMULATED_DATA: 'Dữ liệu trải nghiệm và giá tiền trong bản demo mô phỏng.',
     VERIFIED_DATA: 'POI, hoạt động và khung giờ có nguồn được duyệt, còn hiệu lực tại thời điểm lập lịch.',
     STALE_DATA: 'Một phần bằng chứng đã cũ hoặc hết hạn; cần xác minh lại trước khi đi.',
@@ -58,6 +59,7 @@ const getReasonCopy = (code: string, locale: string): string => {
     SLOT_AVAILABLE: 'Experience timeslot synchronizes with transit schedule.',
     CAPACITY_UNKNOWN: 'Capacity not yet officially reported; please call ahead.',
     MOCK_ROUTING: 'Transit duration is estimated with a simulated routing matrix, not live traffic data.',
+    GOONG_ROUTING: 'Distance and estimated duration come from Goong Directions; this is not live traffic data.',
     SIMULATED_DATA: 'Experience and pricing data in transparent simulated demo mode.',
     VERIFIED_DATA: 'POIs, experiences, and slots have approved, current source evidence at planning time.',
     STALE_DATA: 'Some evidence is outdated or expired; reconfirm before the trip.',
@@ -95,6 +97,7 @@ export function ItineraryPage() {
   const { user } = useAuth()
   const [shareToken, setShareToken] = useState('')
   const [shareUrl, setShareUrl] = useState('')
+  const [currentTimeMs, setCurrentTimeMs] = useState(() => Date.now())
   const [notifications, setNotifications] = useState<
     Array<{ event_id: string; itinerary_id: string; stop_id: string; message: string; created_at?: string }>
   >([])
@@ -144,6 +147,11 @@ export function ItineraryPage() {
       .catch((reason) => setError(apiErrorMessage(reason)))
       .finally(() => setLoading(false))
   }, [id])
+
+  useEffect(() => {
+    const timer = window.setInterval(() => setCurrentTimeMs(Date.now()), 30_000)
+    return () => window.clearInterval(timer)
+  }, [])
 
   useEffect(() => {
     if (!user || !id) return
@@ -259,7 +267,7 @@ export function ItineraryPage() {
     )
   }
 
-  const points = itinerary.stops.map((stop) => ({
+  const points: MapPoint[] = itinerary.stops.map((stop) => ({
     id: stop.experience_id,
     latitude: stop.poi.latitude,
     longitude: stop.poi.longitude,
@@ -267,6 +275,24 @@ export function ItineraryPage() {
     category: stop.category,
     number: stop.position,
   }))
+  if (itinerary.origin_latitude != null && itinerary.origin_longitude != null) {
+    points.unshift({
+      id: 'itinerary-origin', latitude: itinerary.origin_latitude, longitude: itinerary.origin_longitude,
+      name: itinerary.origin_label || (locale === 'en' ? 'Trip origin' : 'Điểm xuất phát'), category: locale === 'en' ? 'Origin' : 'Điểm đi',
+    })
+  }
+  if (itinerary.destination_latitude != null && itinerary.destination_longitude != null) {
+    points.push({
+      id: 'itinerary-destination', latitude: itinerary.destination_latitude, longitude: itinerary.destination_longitude,
+      name: itinerary.destination_label || (locale === 'en' ? 'Return destination' : 'Điểm về'), category: locale === 'en' ? 'Destination' : 'Điểm về',
+    })
+  }
+  const mapRoutes = itinerary.routes
+    .filter((route) => route.geometry && route.geometry.length > 1)
+    .map((route, index) => ({
+      id: `${route.from_experience_id ?? 'origin'}-${route.to_experience_id ?? 'destination'}-${index}`,
+      coordinates: route.geometry!,
+    }))
 
   const activeStop = itinerary.stops.find((stop) => stop.experience_id === selectedId)
   const lastStop = itinerary.stops[itinerary.stops.length - 1]
@@ -590,7 +616,12 @@ export function ItineraryPage() {
           </div>
 
           <div className="timeline-stops-container">
-            {itinerary.stops.map((stop, index) => (
+            {itinerary.stops.map((stop, index) => {
+              const nextStop = itinerary.stops[index + 1]
+              const nextLeg = nextStop && itinerary.routes.find((route) =>
+                route.from_experience_id === stop.experience_id && route.to_experience_id === nextStop.experience_id
+              )
+              return (
               <div key={stop.id} className="timeline-row-wrapper">
                 <article
                   className={`timeline-stop-card-3d ${
@@ -678,16 +709,17 @@ export function ItineraryPage() {
                 </article>
 
                 {/* Travel Leg between stops */}
-                {index < itinerary.stops.length - 1 && (
+                {nextStop && nextLeg && (
                   <div className="travel-leg-indicator">
                     <div className="travel-leg-pill">
                       <Car size={13} className="text-emerald" />
-                      <span>{t('itinerary.transitLeg', { min: 20 })}</span>
+                      <span>{t('itinerary.transitLeg', { min: nextLeg.duration_min })}</span>
                     </div>
                   </div>
                 )}
               </div>
-            ))}
+              )
+            })}
           </div>
         </section>
 
@@ -705,8 +737,11 @@ export function ItineraryPage() {
 
           <MapAdapter
             points={points}
+            routes={mapRoutes}
             selectedId={selectedId}
             onSelect={setSelectedId}
+            pointSourceLabel={locale === 'en' ? 'Itinerary location' : 'Địa điểm trong lịch trình'}
+            mapFooterLabel={locale === 'en' ? 'Trip endpoints, stops, and provider route geometry' : 'Điểm đầu-cuối, điểm dừng và hình học tuyến từ nhà cung cấp'}
             className="itinerary-map-container"
           />
 
@@ -714,6 +749,40 @@ export function ItineraryPage() {
             <span className="route-dot-active" />
             <span>{t('itinerary.routeMatrixNote')}</span>
           </div>
+          {itinerary.routes.length > 0 && (
+            <div className="route-estimate-list" aria-label={t('itinerary.routeEstimates')}>
+              <h3>{t('itinerary.routeEstimates')}</h3>
+              {itinerary.routes.map((leg, index) => {
+                const fromName = leg.from_label || itinerary.stops.find((stop) => stop.experience_id === leg.from_experience_id)?.name || (locale === 'en' ? 'Trip origin' : 'Điểm xuất phát')
+                const toName = leg.to_label || itinerary.stops.find((stop) => stop.experience_id === leg.to_experience_id)?.name || (locale === 'en' ? 'Return destination' : 'Điểm về')
+                const expired = Boolean(leg.eta_valid_until && new Date(leg.eta_valid_until).getTime() < currentTimeMs)
+                const ageSeconds = leg.eta_calculated_at
+                  ? Math.max(0, Math.floor((currentTimeMs - new Date(leg.eta_calculated_at).getTime()) / 1000))
+                  : leg.eta_age_seconds
+                return (
+                  <article className="route-estimate-card" key={`${leg.from_experience_id ?? 'origin'}-${leg.to_experience_id ?? 'destination'}-${index}`}>
+                    <div className="route-estimate-heading">
+                      <Route size={14} className="text-emerald" />
+                      <strong>{fromName} → {toName}</strong>
+                      <span>{(leg.distance_m / 1000).toFixed(1)} km · {t('itinerary.transitLeg', { min: leg.duration_min })}</span>
+                    </div>
+                    <div className="route-estimate-meta">
+                      <span>{leg.eta_source || leg.provider}</span>
+                      <span>{ageSeconds == null
+                        ? t('itinerary.routeAgeUnknown')
+                        : t('itinerary.routeAge', { age: ageSeconds })}</span>
+                      {leg.eta_calculated_at && <span>{t('itinerary.routeCalculatedAt', { time: dateTimeLabel(leg.eta_calculated_at, locale) })}</span>}
+                      {leg.eta_valid_until && <span className={expired ? 'route-estimate-expired' : ''}>
+                        {expired ? t('itinerary.routeEstimateExpired') : t('itinerary.routeValidUntil', { time: dateTimeLabel(leg.eta_valid_until, locale) })}
+                      </span>}
+                      <span>{leg.is_realtime ? t('itinerary.liveTraffic') : t('itinerary.notLiveTraffic')}</span>
+                      {leg.eta_source_uri && <a href={leg.eta_source_uri} target="_blank" rel="noreferrer">{t('itinerary.routeSource')}</a>}
+                    </div>
+                  </article>
+                )
+              })}
+            </div>
+          )}
         </section>
       </div>
 

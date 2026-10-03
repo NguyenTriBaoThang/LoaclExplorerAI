@@ -9,6 +9,7 @@ from sqlalchemy.pool import StaticPool
 
 os.environ.setdefault("APP_ENV", "test")
 os.environ.setdefault("ADMIN_API_KEY", "test-admin-key")
+os.environ.setdefault("ROUTING_PROVIDER", "mock")
 from geoalchemy2.elements import WKTElement
 
 from app.db.base import Base

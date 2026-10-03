@@ -8,7 +8,6 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session, joinedload, selectinload
 
 from app.adapters.llm.provider import StructuredOutputProvider
-from app.adapters.routing.provider import MockRoutingProvider
 from app.core.enums import ItineraryStatus, PriceBasis, normalize_intent_tag
 from app.models.entities import (
     DecisionLog,
@@ -85,7 +84,7 @@ class ReplanningService:
     def __init__(self, db: Session, provider: StructuredOutputProvider | None):
         self.db = db
         self.runner = PromptRunner(provider) if provider else None
-        self.routing = RoutingService(MockRoutingProvider())
+        self.routing = RoutingService()
         self.availability = AvailabilityService()
 
     def _load(self, itinerary_id: str, event_id: str, lock: bool = False):

@@ -28,6 +28,8 @@ class PlanRequest(BaseModel):
             raise ValueError("Provide both origin latitude and longitude")
         if (self.destination_latitude is None) != (self.destination_longitude is None):
             raise ValueError("Provide both destination latitude and longitude")
+        if (self.origin_latitude is None) != (self.destination_latitude is None):
+            raise ValueError("Provide both origin and return-destination coordinates for a round-trip route")
         return self
 
     @field_validator("start_at", "end_at")
@@ -47,6 +49,19 @@ class RouteLeg(BaseModel):
     duration_min: int
     provider: str = "mock"
     is_realtime: bool = False
+    eta_source: str = "Mock estimate"
+    eta_source_uri: str | None = None
+    eta_calculated_at: datetime | None = None
+    eta_age_seconds: int | None = Field(default=None, ge=0)
+    eta_valid_until: datetime | None = None
+    geometry: list[tuple[float, float]] | None = None
+
+    @field_validator("eta_calculated_at", "eta_valid_until", mode="before")
+    @classmethod
+    def require_aware_eta_times(cls, value):
+        if isinstance(value, datetime) and (value.tzinfo is None or value.utcoffset() is None):
+            return value.replace(tzinfo=timezone.utc)
+        return value
 
 
 class ItineraryStopRead(BaseModel):
@@ -99,6 +114,12 @@ class PlanResponse(BaseModel):
     start_at: datetime | None = None
     return_deadline: datetime | None = None
     estimated_return_at: datetime | None = None
+    origin_latitude: float | None = None
+    origin_longitude: float | None = None
+    origin_label: str | None = None
+    destination_latitude: float | None = None
+    destination_longitude: float | None = None
+    destination_label: str | None = None
     stops: list[ItineraryStopRead]
     routes: list[RouteLeg]
     explanation: Explanation

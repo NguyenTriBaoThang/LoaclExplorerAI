@@ -1,5 +1,5 @@
 import axios from 'axios'
-import type { AuthUser, ChatReply, Experience, Itinerary, POI } from '../types'
+import type { AuthUser, ChatReply, Experience, GeocodeResponse, Itinerary, POI, RoutingCapabilities } from '../types'
 
 export const api = axios.create({ baseURL: '/api', timeout: 30000, withCredentials: true })
 
@@ -59,6 +59,16 @@ export async function submitFeedback(itineraryId: string, rating: number, review
 export async function searchExperiences(q: string, params: Record<string, string | number | boolean>, semantic = false): Promise<Experience[]> {
   const { data } = await api.get<{ items: Experience[] }>('/experience-search', { params: { ...params, q, semantic } })
   return data.items
+}
+
+export async function geocodeAddress(address: string): Promise<GeocodeResponse> {
+  const { data } = await api.get<GeocodeResponse>('/geocoding/forward', { params: { address } })
+  return data
+}
+
+export async function getRoutingCapabilities(): Promise<RoutingCapabilities> {
+  const { data } = await api.get<RoutingCapabilities>('/routing/capabilities')
+  return data
 }
 
 export async function getNotifications() {
@@ -423,29 +433,17 @@ export async function getItinerary(id: string): Promise<Itinerary> {
     if (axios.isAxiosError(error) && error.response) throw error
     const found = mockItineraryStore.get(id)
     if (found) return found
-
-    // Return default rich mock itinerary if direct URL accessed
-    const start = new Date()
-    start.setHours(9, 0, 0, 0)
-    const end = new Date()
-    end.setHours(17, 0, 0, 0)
-    return createItinerary({
-      start_at: start.toISOString(),
-      end_at: end.toISOString(),
-      group_size: 2,
-      budget_vnd: 1500000,
-      transport_mode: 'driving',
-      intent_weights: { handicraft: 1, food: 1 },
-      locked_experience_ids: [],
-    })
+    throw error
   }
 }
 
 export function apiErrorMessage(error: unknown): string {
   if (typeof error === 'object' && error !== null && 'response' in error) {
-    const response = (error as { response?: { data?: { error?: { message?: string } } } }).response
-    return response?.data?.error?.message ?? 'Đang hiển thị chế độ mô phỏng trực tuyến.'
+    const response = (error as { response?: { data?: { error?: { message?: string }; detail?: string | { message?: string } } } }).response
+    const detail = response?.data?.detail
+    return response?.data?.error?.message ?? (typeof detail === 'string' ? detail : detail?.message) ?? 'Đang hiển thị chế độ mô phỏng trực tuyến.'
   }
+  if (error instanceof Error && error.message) return error.message
   return 'Đang hiển thị chế độ mô phỏng trực tuyến.'
 }
 

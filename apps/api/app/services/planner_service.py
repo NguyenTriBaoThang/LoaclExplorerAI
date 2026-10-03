@@ -4,8 +4,7 @@ from uuid import uuid4
 from sqlalchemy import select
 from sqlalchemy.orm import Session, joinedload, selectinload
 
-from app.adapters.routing.provider import MockRoutingProvider
-from app.core.config import settings
+from app.adapters.routing.provider import NoRouteFound, RoutingProvider
 from app.core.enums import ItineraryStatus, PriceBasis, normalize_intent_tag
 from app.models.entities import DecisionLog, Experience, ExperienceSlot, Itinerary, ItineraryStop, ItineraryVersion
 from app.repositories.experience_repository import ExperienceRepository
@@ -28,13 +27,11 @@ def as_aware(value: datetime) -> datetime:
 
 
 class PlannerService:
-    def __init__(self, db: Session, routing: MockRoutingProvider | None = None,
+    def __init__(self, db: Session, routing: RoutingProvider | None = None,
                  engine: PlannerEngine | None = None, ranker=None):
         self.db = db
         self.repository = ExperienceRepository(db)
-        if routing is None and settings.routing_provider != "mock":
-            raise RuntimeError(f"Routing provider '{settings.routing_provider}' is not configured")
-        self.routing = RoutingService(routing or MockRoutingProvider())
+        self.routing = RoutingService(routing)
         self.availability = AvailabilityService()
         self.engine = engine or HeuristicPlanner()
         self.ranker = ranker or ranker_service
@@ -121,7 +118,7 @@ class PlannerService:
         total_cost = 0
         total_travel = 0
         routes: list[dict] = []
-        reason_codes: set[str] = {"MOCK_ROUTING"}
+        reason_codes: set[str] = set()
         unknown_capacity = False
         ranking_model_version = "heuristic-v1"
 
@@ -151,7 +148,10 @@ class PlannerService:
                     if not self.availability.can_fit(slot, request.group_size):
                         continue
                     if previous_poi:
-                        leg = self.routing.get_route(previous_poi, (experience.poi.latitude, experience.poi.longitude), request.transport_mode)
+                        try:
+                            leg = self.routing.get_route(previous_poi, (experience.poi.latitude, experience.poi.longitude), request.transport_mode)
+                        except NoRouteFound:
+                            continue
                         travel = leg.duration_min
                     else:
                         leg, travel = None, 0
@@ -160,11 +160,14 @@ class PlannerService:
                     return_leg = None
                     return_travel = 0
                     if request.destination_latitude is not None and request.destination_longitude is not None:
-                        return_leg = self.routing.get_route(
-                            (experience.poi.latitude, experience.poi.longitude),
-                            (request.destination_latitude, request.destination_longitude),
-                            request.transport_mode,
-                        )
+                        try:
+                            return_leg = self.routing.get_route(
+                                (experience.poi.latitude, experience.poi.longitude),
+                                (request.destination_latitude, request.destination_longitude),
+                                request.transport_mode,
+                            )
+                        except NoRouteFound:
+                            continue
                         return_travel = return_leg.duration_min
                         if slot_end + timedelta(minutes=return_travel) > end_at:
                             continue
@@ -202,9 +205,9 @@ class PlannerService:
                     "from_label": None if chosen else (request.origin_label or "Điểm xuất phát"),
                     "distance_m": next_item["leg"].distance_m,
                     "duration_min": next_item["leg"].duration_min,
-                    "provider": next_item["leg"].provider,
-                    "is_realtime": next_item["leg"].is_realtime,
+                    **self.routing.eta_metadata(next_item["leg"]),
                 })
+                reason_codes.add("MOCK_ROUTING" if next_item["leg"].provider == "mock" else "GOONG_ROUTING")
             chosen.append({**next_item, "arrival": slot_start})
             chosen_experience_ids.add(experience.id)
             chosen_poi_ids.add(experience.poi_id)
@@ -243,9 +246,9 @@ class PlannerService:
                     "to_label": request.destination_label or "Điểm về",
                     "distance_m": route.distance_m,
                     "duration_min": route.duration_min,
-                    "provider": route.provider,
-                    "is_realtime": route.is_realtime,
+                    **self.routing.eta_metadata(route),
                 })
+                reason_codes.add("MOCK_ROUTING" if route.provider == "mock" else "GOONG_ROUTING")
 
         requested_intents = {tag for tag, weight in request.intent_weights.items() if weight > 0}
         provided_intents = {normalize_intent_tag(tag) for item in chosen for tag in item["experience"].intent_tags}
@@ -331,6 +334,12 @@ class PlannerService:
             "start_at": start_at,
             "return_deadline": end_at,
             "estimated_return_at": estimated_return_at,
+            "origin_latitude": request.origin_latitude,
+            "origin_longitude": request.origin_longitude,
+            "origin_label": request.origin_label,
+            "destination_latitude": request.destination_latitude,
+            "destination_longitude": request.destination_longitude,
+            "destination_label": request.destination_label,
             "stops": response_stops,
             "routes": routes,
             "explanation": explanation,
@@ -389,7 +398,7 @@ class PlannerService:
             routes.append({"from_experience_id": None, "to_experience_id": first["experience_id"],
                            "from_label": itinerary.constraints.get("origin_label") or "Điểm xuất phát",
                            "distance_m": route.distance_m, "duration_min": route.duration_min,
-                           "provider": route.provider, "is_realtime": route.is_realtime})
+                           **self.routing.eta_metadata(route)})
         for previous, current in zip(stops, stops[1:]):
             route = self.routing.get_route(
                 (previous["poi"]["latitude"], previous["poi"]["longitude"]),
@@ -397,7 +406,7 @@ class PlannerService:
                 mode,
             )
             travel += route.duration_min
-            routes.append({"from_experience_id": previous["experience_id"], "to_experience_id": current["experience_id"], "distance_m": route.distance_m, "duration_min": route.duration_min, "provider": route.provider, "is_realtime": route.is_realtime})
+            routes.append({"from_experience_id": previous["experience_id"], "to_experience_id": current["experience_id"], "distance_m": route.distance_m, "duration_min": route.duration_min, **self.routing.eta_metadata(route)})
         if stops and itinerary.destination_latitude is not None and itinerary.destination_longitude is not None:
             last = stops[-1]
             route = self.routing.get_route((last["poi"]["latitude"], last["poi"]["longitude"]),
@@ -406,9 +415,13 @@ class PlannerService:
             routes.append({"from_experience_id": last["experience_id"], "to_experience_id": None,
                            "to_label": itinerary.constraints.get("destination_label") or "Điểm về",
                            "distance_m": route.distance_m, "duration_min": route.duration_min,
-                           "provider": route.provider, "is_realtime": route.is_realtime})
+                           **self.routing.eta_metadata(route)})
         current_modes = {stop["data_status"] for stop in stops}
-        reasons = ["MOCK_ROUTING", "SLOT_AVAILABLE"]
+        reasons = ["SLOT_AVAILABLE"]
+        if any(route["provider"] == "mock" for route in routes):
+            reasons.append("MOCK_ROUTING")
+        if any(route["provider"] != "mock" for route in routes):
+            reasons.append("GOONG_ROUTING")
         if "verified" in current_modes:
             reasons.append("VERIFIED_DATA")
         if "simulated" in current_modes:
@@ -436,6 +449,12 @@ class PlannerService:
             "start_at": as_aware(itinerary.start_time or itinerary.start_at),
             "return_deadline": as_aware(itinerary.return_deadline or itinerary.end_at),
             "estimated_return_at": (as_aware(stops[-1]["end_at"]) if stops else as_aware(itinerary.end_at)) + timedelta(minutes=(routes[-1]["duration_min"] if routes and routes[-1].get("to_experience_id") is None else 0)),
+            "origin_latitude": itinerary.origin_latitude,
+            "origin_longitude": itinerary.origin_longitude,
+            "origin_label": itinerary.constraints.get("origin_label"),
+            "destination_latitude": itinerary.destination_latitude,
+            "destination_longitude": itinerary.destination_longitude,
+            "destination_label": itinerary.constraints.get("destination_label"),
             "routes": routes, "explanation": {
                 **self.explainer.explain(reasons, preserved, sorted(requested_intents - set(preserved))),
                 "evidence_refs": sorted({

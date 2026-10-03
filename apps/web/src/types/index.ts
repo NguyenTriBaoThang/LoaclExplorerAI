@@ -101,6 +101,38 @@ export interface RouteLeg {
   duration_min: number
   provider: string
   is_realtime: boolean
+  eta_source?: string
+  eta_source_uri?: string | null
+  eta_calculated_at?: string | null
+  eta_age_seconds?: number | null
+  eta_valid_until?: string | null
+  geometry?: [number, number][] | null
+}
+
+export interface GeocodeCandidate {
+  formatted_address: string
+  latitude: number
+  longitude: number
+  place_id: string | null
+}
+
+export interface GeocodeResponse {
+  query: string
+  provider: string
+  source_uri: string
+  resolved_at: string
+  valid_until: string
+  age_seconds: number
+  results: GeocodeCandidate[]
+}
+
+export interface RoutingCapabilities {
+  provider: string
+  configured: boolean
+  supported_modes: string[]
+  eta_is_realtime: boolean
+  geocoding_provider?: string
+  geocoding_configured?: boolean
 }
 
 export interface ItineraryStop {
@@ -137,6 +169,12 @@ export interface Itinerary {
   start_at?: string
   return_deadline?: string
   estimated_return_at?: string
+  origin_latitude?: number | null
+  origin_longitude?: number | null
+  origin_label?: string | null
+  destination_latitude?: number | null
+  destination_longitude?: number | null
+  destination_label?: string | null
   stops: ItineraryStop[]
   routes: RouteLeg[]
   explanation: {

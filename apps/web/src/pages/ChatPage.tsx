@@ -25,8 +25,8 @@ import {
   Info,
 } from 'lucide-react'
 import { useNavigate } from 'react-router-dom'
-import { api, apiErrorMessage, createItinerary, sendChatMessage } from '../api/client'
-import type { ChatConstraints, POI } from '../types'
+import { api, apiErrorMessage, createItinerary, getRoutingCapabilities, sendChatMessage } from '../api/client'
+import type { ChatConstraints, POI, RoutingCapabilities } from '../types'
 import { useTranslation } from '../i18n'
 
 type ChatLine = {
@@ -157,6 +157,7 @@ export function ChatPage() {
   const [error, setError] = useState('')
   const [pois, setPois] = useState<POI[]>([])
   const [poiError, setPoiError] = useState('')
+  const [routingCapabilities, setRoutingCapabilities] = useState<RoutingCapabilities | null>(null)
   const [date, setDate] = useState(() => {
     const tomorrow = new Date()
     tomorrow.setDate(tomorrow.getDate() + 1)
@@ -183,6 +184,14 @@ export function ChatPage() {
   }, [])
 
   useEffect(() => {
+    let active = true
+    void getRoutingCapabilities()
+      .then((capabilities) => { if (active) setRoutingCapabilities(capabilities) })
+      .catch(() => { if (active) setRoutingCapabilities(null) })
+    return () => { active = false }
+  }, [])
+
+  useEffect(() => {
     feedEndRef.current?.scrollIntoView({ behavior: 'smooth', block: 'end' })
   }, [messages, busy])
 
@@ -194,9 +203,14 @@ export function ChatPage() {
   })), [constraints, lockedOverrides, pois])
 
   const unresolvedLockedPlaces = lockedPlaces.filter((place) => !place.poiId)
+  const plannerTravelMode = constraints?.travel_mode === 'car' ? 'car' : constraints?.travel_mode
+  const unsupportedTravelMode = Boolean(
+    routingCapabilities && plannerTravelMode && !routingCapabilities.supported_modes.includes(plannerTravelMode),
+  )
+  const routingUnavailable = routingCapabilities?.configured === false
   const canCreateItinerary = Boolean(
     constraints?.is_complete && originId && destinationId && !poiError &&
-    unresolvedLockedPlaces.length === 0 && !busy && !creating,
+    unresolvedLockedPlaces.length === 0 && !unsupportedTravelMode && !routingUnavailable && !busy && !creating,
   )
 
   const criteriaStatus = useMemo(() => {
@@ -363,13 +377,23 @@ export function ChatPage() {
           ? 'Departure or destination landmark not found in catalog.'
           : 'Không tìm thấy điểm xuất phát hoặc điểm về trong danh mục.')
       }
+      if (routingCapabilities && !routingCapabilities.supported_modes.includes(constraints.travel_mode)) {
+        throw new Error(locale === 'en'
+          ? `${constraints.travel_mode} routing is not supported by ${routingCapabilities.provider}. Choose motorcycle, walking, or car in the chat.`
+          : `${routingCapabilities.provider} chưa hỗ trợ phương tiện “${constraints.travel_mode}”. Hãy nhắn lại để chọn xe máy, đi bộ hoặc ô tô.`)
+      }
+      if (routingUnavailable) {
+        throw new Error(locale === 'en'
+          ? `Routing provider ${routingCapabilities?.provider} is not configured. Set its API key before planning.`
+          : `Chưa cấu hình khóa API cho nhà cung cấp tuyến đường ${routingCapabilities?.provider}.`)
+      }
 
       const result = await createItinerary({
         start_at: startAt.toISOString(),
         end_at: returnAt.toISOString(),
         group_size: constraints.group_size!,
         budget_vnd: constraints.budget_vnd!,
-        transport_mode: constraints.travel_mode === 'car' ? 'driving' : constraints.travel_mode,
+        transport_mode: constraints.travel_mode,
         intent_weights: constraints.intent_weights,
         locked_experience_ids: [],
         locked_poi_ids: lockedPlaces.map((place) => place.poiId),
@@ -680,7 +704,13 @@ export function ChatPage() {
                 <div className="param-val">
                   {modeLabels[constraints?.travel_mode ?? 'motorcycle']}
                 </div>
-                <div className="param-sub">{t('chat.autoEta')}</div>
+                <div className={`param-sub ${unsupportedTravelMode ? 'text-amber' : ''}`}>
+                  {routingUnavailable
+                    ? (locale === 'en' ? `API key missing for ${routingCapabilities?.provider}.` : `Thiếu khóa API ${routingCapabilities?.provider}.`)
+                    : unsupportedTravelMode
+                      ? (locale === 'en' ? `Unsupported by ${routingCapabilities?.provider}; choose motorcycle, walking, or car.` : `Nhà cung cấp ${routingCapabilities?.provider} chưa hỗ trợ; hãy chọn xe máy, đi bộ hoặc ô tô.`)
+                      : t('chat.autoEta')}
+                </div>
               </div>
             </div>
 

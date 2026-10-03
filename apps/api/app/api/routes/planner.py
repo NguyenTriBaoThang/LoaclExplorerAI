@@ -6,6 +6,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.api.dependencies import get_optional_user, require_roles
+from app.adapters.routing.provider import RoutingConfigurationError, RoutingProviderError, UnsupportedTravelMode
 from app.db.session import get_db
 from app.models.entities import Event, Experience, ExperienceSlot, Feedback, Itinerary, ItineraryStop, ItineraryVersion, User
 from app.schemas.ai import FeedbackLabelRequest
@@ -21,6 +22,12 @@ def plan_itinerary(payload: PlanRequest, db: Session = Depends(get_db), user: Us
         return PlannerService(db).plan(payload, user.id if user else None)
     except NoFeasiblePlan as error:
         raise HTTPException(status_code=422, detail={"code": "NO_FEASIBLE_PLAN", "message": str(error)}) from error
+    except UnsupportedTravelMode as error:
+        raise HTTPException(status_code=422, detail={"code": "UNSUPPORTED_TRAVEL_MODE", "message": str(error)}) from error
+    except RoutingConfigurationError as error:
+        raise HTTPException(status_code=503, detail={"code": "ROUTING_NOT_CONFIGURED", "message": str(error)}) from error
+    except RoutingProviderError as error:
+        raise HTTPException(status_code=502, detail={"code": "ROUTING_PROVIDER_ERROR", "message": str(error)}) from error
 
 
 @router.get("/itineraries/{itinerary_id}", response_model=PlanResponse)
@@ -28,7 +35,12 @@ def get_itinerary(itinerary_id: str, db: Session = Depends(get_db), user: User |
     record = db.get(Itinerary, itinerary_id)
     if record and record.user_id and (user is None or (user.id != record.user_id and user.role != "admin")):
         raise HTTPException(status_code=403, detail={"code": "ITINERARY_FORBIDDEN", "message": "This itinerary belongs to another account."})
-    result = PlannerService(db).get_itinerary(itinerary_id)
+    try:
+        result = PlannerService(db).get_itinerary(itinerary_id)
+    except RoutingConfigurationError as error:
+        raise HTTPException(status_code=503, detail={"code": "ROUTING_NOT_CONFIGURED", "message": str(error)}) from error
+    except RoutingProviderError as error:
+        raise HTTPException(status_code=502, detail={"code": "ROUTING_PROVIDER_ERROR", "message": str(error)}) from error
     if not result:
         raise HTTPException(status_code=404, detail={"code": "NOT_FOUND", "message": "Itinerary not found"})
     return result

@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { Marker, MapContainer, Popup, TileLayer, useMap } from 'react-leaflet'
+import { Marker, MapContainer, Polyline, Popup, TileLayer, useMap } from 'react-leaflet'
 import type { LatLngExpression } from 'leaflet'
 import { divIcon } from 'leaflet'
 import { MapPin, Layers, Sparkles } from 'lucide-react'
@@ -12,6 +12,11 @@ export interface MapPoint {
   name: string
   category?: string
   number?: number
+}
+
+export interface MapRoute {
+  id: string
+  coordinates: [number, number][]
 }
 
 function FocusPoint({ point }: { point?: MapPoint }) {
@@ -36,6 +41,21 @@ function FocusPoint({ point }: { point?: MapPoint }) {
   return null
 }
 
+function FitRouteBounds({ points, routes }: { points: MapPoint[]; routes: MapRoute[] }) {
+  const map = useMap()
+  const boundsFingerprint = `${points.map((point) => `${point.latitude},${point.longitude}`).join('|')}::${routes.map((route) => route.coordinates.map(([lat, lon]) => `${lat},${lon}`).join(';')).join('|')}`
+  useEffect(() => {
+    const positions = [
+      ...points.map((point) => [point.latitude, point.longitude] as [number, number]),
+      ...routes.flatMap((route) => route.coordinates),
+    ]
+    if (positions.length > 1) map.fitBounds(positions, { padding: [36, 36], maxZoom: 15 })
+  // Use coordinate content rather than object identity so ETA clock ticks or stop selection don't reset map bounds.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [map, boundsFingerprint])
+  return null
+}
+
 const TILE_PRESETS = {
   dark: {
     name: 'Đêm Huyền Ảo',
@@ -53,11 +73,17 @@ export function MapAdapter({
   points,
   selectedId,
   onSelect,
+  routes = [],
+  pointSourceLabel,
+  mapFooterLabel,
   className = '',
 }: {
   points: MapPoint[]
   selectedId?: string
   onSelect?: (id: string) => void
+  routes?: MapRoute[]
+  pointSourceLabel?: string
+  mapFooterLabel?: string
   className?: string
 }) {
   const theme = useTheme()
@@ -84,7 +110,15 @@ export function MapAdapter({
           url={TILE_PRESETS[styleMode].url}
           maxZoom={19}
         />
+        <FitRouteBounds points={points} routes={routes} />
         <FocusPoint point={selected} />
+        {routes.map((route) => (
+          <Polyline
+            key={route.id}
+            positions={route.coordinates}
+            pathOptions={{ color: '#34d399', weight: 5, opacity: 0.8 }}
+          />
+        ))}
         {points.map((point) => {
           const active = point.id === selectedId
           const icon = divIcon({
@@ -116,7 +150,7 @@ export function MapAdapter({
                   <span className="popup-kicker">{point.category ?? 'Trải nghiệm'}</span>
                   <strong className="popup-title">{point.name}</strong>
                   <span className="popup-sub">
-                    <MapPin size={11} /> Vị trí mô phỏng · TP. HCM
+                    <MapPin size={11} /> {pointSourceLabel || 'Vị trí mô phỏng · TP. HCM'}
                   </span>
                   {onSelect && (
                     <button
@@ -153,7 +187,7 @@ export function MapAdapter({
       </div>
 
       <div className="map-3d-bottom-info">
-        <span>Tọa độ mô phỏng · Tự động đồng bộ với danh sách</span>
+        <span>{mapFooterLabel || 'Tọa độ mô phỏng · Tự động đồng bộ với danh sách'}</span>
       </div>
     </div>
   )
