@@ -449,3 +449,14 @@ postgres_data/
 redis_data/
 models/e5/*
 !models/e5/.gitkeep
+models/ai-ranker/*
+!models/ai-ranker/.gitkeep
+models/flood-report-experiment/*
+!models/flood-report-experiment/.gitkeep
+models/flood-risk/*
+!models/flood-risk/.gitkeep
+
+# Notebooks / Google Colab training files
+notebooks/
+*.ipynb
+.ipynb_checkpoints/

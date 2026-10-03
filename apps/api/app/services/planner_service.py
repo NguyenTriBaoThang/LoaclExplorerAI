@@ -12,6 +12,7 @@ from app.repositories.experience_repository import ExperienceRepository
 from app.schemas.planner import PlanRequest
 from app.services.explanation_service import ExplanationService
 from app.services.availability_service import AvailabilityService
+from app.services.ml_ranker_service import MLRankerUnavailable, ranker_service
 from app.services.planner_engine import HeuristicPlanner, PlannerEngine
 from app.services.recommendation_service import RecommendationService
 from app.services.routing_service import RoutingService
@@ -26,7 +27,8 @@ def as_aware(value: datetime) -> datetime:
 
 
 class PlannerService:
-    def __init__(self, db: Session, routing: MockRoutingProvider | None = None, engine: PlannerEngine | None = None):
+    def __init__(self, db: Session, routing: MockRoutingProvider | None = None,
+                 engine: PlannerEngine | None = None, ranker=None):
         self.db = db
         self.repository = ExperienceRepository(db)
         if routing is None and settings.routing_provider != "mock":
@@ -34,8 +36,65 @@ class PlannerService:
         self.routing = RoutingService(routing or MockRoutingProvider())
         self.availability = AvailabilityService()
         self.engine = engine or HeuristicPlanner()
+        self.ranker = ranker or ranker_service
         self.recommender = RecommendationService()
         self.explainer = ExplanationService()
+
+    def _rank_feasible_candidates(self, candidates: list[dict], request: PlanRequest,
+                                  cursor: datetime, end_at: datetime,
+                                  budget_remaining_vnd: int) -> str | None:
+        """Use the optional ranker as a tie-break only; feasibility stays solver-owned."""
+        if (len(candidates) < 2 or any(item["locked"] for item in candidates)
+                or not isinstance(self.engine, HeuristicPlanner) or not self.ranker.configured):
+            return None
+
+        intent_tags = [tag for tag, weight in request.intent_weights.items() if weight > 0]
+        query = {
+            "user_intent_text": " ".join(intent_tags),
+            "user_intent_tags": intent_tags,
+            "remaining_time_min": max(1, (end_at - cursor).total_seconds() / 60),
+            "group_size": request.group_size,
+            "budget_remaining_vnd": max(0, budget_remaining_vnd),
+        }
+        rows = []
+        candidates_by_key = {}
+        for item in candidates:
+            experience = item["experience"]
+            slot = item["slot"]
+            key = (experience.id, slot.id)
+            candidates_by_key[key] = item
+            rows.append({
+                "candidate_experience_id": experience.id,
+                "candidate_slot_id": slot.id,
+                "candidate_name": experience.name,
+                "candidate_tags": experience.intent_tags or [],
+                "duration_min": experience.duration_min,
+                "price_vnd_per_person": item["cost"] / max(request.group_size, 1),
+                "total_cost_vnd": item["cost"],
+                "is_hands_on": experience.is_hands_on,
+                "is_indoor": experience.is_indoor,
+                "eta_min": item["travel"],
+                "hard_feasible": True,
+            })
+
+        try:
+            ranked, filtered_ids, status = self.ranker.rank(query, rows)
+        except MLRankerUnavailable:
+            return None
+
+        # If the model/service disagrees with the already-validated candidate set,
+        # keep the deterministic planner unchanged instead of dropping choices.
+        if filtered_ids or len(ranked) != len(candidates):
+            return None
+        scores = {
+            (row["candidate_experience_id"], row["candidate_slot_id"]): row["rank_score"]
+            for row in ranked
+        }
+        if set(scores) != set(candidates_by_key):
+            return None
+        for key, item in candidates_by_key.items():
+            item["score"] = float(scores[key])
+        return status.get("model_version") or "local-ranker"
 
     def plan(self, request: PlanRequest, user_id: str | None = None) -> dict:
         start_at, end_at = as_aware(request.start_at), as_aware(request.end_at)
@@ -63,6 +122,7 @@ class PlannerService:
         routes: list[dict] = []
         reason_codes: set[str] = {"SIMULATED_DATA", "MOCK_ROUTING"}
         unknown_capacity = False
+        ranking_model_version = "heuristic-v1"
 
         # Locked experiences are scheduled first in the caller's requested order.
         ordered_ids = list(dict.fromkeys(request.locked_experience_ids))
@@ -119,6 +179,12 @@ class PlannerService:
                         "return_leg": return_leg,
                         "return_travel": return_travel,
                     })
+            used_ranker_version = self._rank_feasible_candidates(
+                candidates, request, cursor, end_at, request.budget_vnd - total_cost,
+            )
+            if used_ranker_version:
+                ranking_model_version = used_ranker_version
+                reason_codes.add("ML_RANKER")
             next_item = self.engine.plan(candidates)
             if not next_item:
                 break
@@ -216,12 +282,14 @@ class PlannerService:
             total_cost_vnd=total_cost, total_travel_time_s=total_travel * 60,
             preserved_intents_ratio=(len(preserved) / sum(weight > 0 for weight in request.intent_weights.values())) if any(weight > 0 for weight in request.intent_weights.values()) else 1.0,
         ))
+        explanation = self.explainer.explain(sorted(reason_codes), preserved, lost)
+        explanation["ranking_model_version"] = ranking_model_version if "ML_RANKER" in reason_codes else None
         self.db.add(DecisionLog(
             itinerary_id=itinerary.id, base_version=0, new_version=1,
             preserved_intents=preserved, lost_intents=lost,
             comparative_metrics={"estimated_cost_vnd": total_cost, "total_travel_time_s": total_travel * 60},
             explanation_vi="Lịch trình được tạo theo ngân sách, thời gian và mục đích chuyến đi đã chọn.",
-            reason_codes=sorted(reason_codes), rejected_candidates=[], model_version="heuristic-v1",
+            reason_codes=sorted(reason_codes), rejected_candidates=[], model_version=ranking_model_version,
         ))
         self.db.commit()
         return {
@@ -237,7 +305,7 @@ class PlannerService:
             "estimated_return_at": estimated_return_at,
             "stops": response_stops,
             "routes": routes,
-            "explanation": self.explainer.explain(sorted(reason_codes), preserved, lost),
+            "explanation": explanation,
         }
 
     @staticmethod

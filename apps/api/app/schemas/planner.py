@@ -80,6 +80,7 @@ class Explanation(BaseModel):
     reason_codes: list[str] = Field(default_factory=list)
     evidence_refs: list[str] = Field(default_factory=list)
     uncertainty: list[str] = Field(default_factory=list)
+    ranking_model_version: str | None = None
 
 
 class PlanResponse(BaseModel):

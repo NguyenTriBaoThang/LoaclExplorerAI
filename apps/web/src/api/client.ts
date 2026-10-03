@@ -1,5 +1,5 @@
 import axios from 'axios'
-import type { AuthUser, Experience, Itinerary, POI } from '../types'
+import type { AuthUser, ChatReply, Experience, Itinerary, POI } from '../types'
 
 export const api = axios.create({ baseURL: '/api', timeout: 30000, withCredentials: true })
 
@@ -20,6 +20,11 @@ export async function getCurrentUser(): Promise<AuthUser> {
 
 export async function logout(): Promise<void> {
   await api.post('/auth/logout')
+}
+
+export async function sendChatMessage(message: string, conversation_id: string): Promise<ChatReply> {
+  const { data } = await api.post<ChatReply>('/chat/message', { message, conversation_id })
+  return data
 }
 
 export async function updateProfile(display_name: string, phone: string | null): Promise<AuthUser> {
@@ -320,12 +325,12 @@ export async function createItinerary(payload: {
   destination_latitude?: number
   destination_longitude?: number
   destination_label?: string
-}): Promise<Itinerary> {
+}, options: { allowSimulation?: boolean } = {}): Promise<Itinerary> {
   try {
     const { data } = await api.post<Itinerary>('/itineraries/plan', payload)
     return data
   } catch (error) {
-    if (axios.isAxiosError(error) && error.response) throw error
+    if ((axios.isAxiosError(error) && error.response) || options.allowSimulation === false) throw error
     // Generate intelligent client-side simulated itinerary
     const selectedIntents = Object.keys(payload.intent_weights)
     let candidates = mockExperiencesStore.filter((exp) => {

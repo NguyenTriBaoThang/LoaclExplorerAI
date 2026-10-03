@@ -30,6 +30,7 @@ services:
       context: ./apps/api
       args:
         INSTALL_E5: ${INSTALL_E5:-false}
+        INSTALL_ML: ${INSTALL_ML:-false}
     environment:
       APP_ENV: ${APP_ENV:-development}
       DATABASE_URL: ${DATABASE_URL:-postgresql+psycopg://postgres:${POSTGRES_PASSWORD:-postgres}@db:5432/local_explorer}
@@ -53,6 +54,9 @@ services:
       DEMO_TRAVELER_EMAIL: ${DEMO_TRAVELER_EMAIL:-baothang@gmail.com}
       DEMO_TRAVELER_PASSWORD: ${DEMO_TRAVELER_PASSWORD:-}
       E5_MODEL_PATH: ${E5_MODEL_PATH:-/models/e5}
+      RANKER_MODEL_DIR: ${RANKER_MODEL_DIR:-/models/ai-ranker}
+      FLOOD_MODEL_DIR: ${FLOOD_MODEL_DIR:-/models/flood-risk}
+      ALLOW_UNVERIFIED_RANKER: ${ALLOW_UNVERIFIED_RANKER:-false}
     ports:
       - "${API_PORT:-8000}:8000"
     depends_on:
@@ -61,7 +65,7 @@ services:
       redis:
         condition: service_healthy
     volumes:
-      - ./models/e5:/models/e5:ro
+      - ./models:/models:ro
     command: ["sh", "-c", "alembic upgrade head && python -m scripts.seed_db && uvicorn app.main:app --host 0.0.0.0 --port 8000"]
 
   web:

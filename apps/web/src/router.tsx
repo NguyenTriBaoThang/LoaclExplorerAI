@@ -12,6 +12,7 @@ import { ProfilePage } from './pages/ProfilePage'
 import { AdminPage } from './pages/AdminPage'
 import { SharedItineraryPage } from './pages/SharedItineraryPage'
 import { ComparePage } from './pages/ComparePage'
+import { ChatPage } from './pages/ChatPage'
 import { RoleRoute } from './auth'
 
 export const router = createBrowserRouter([{
@@ -19,6 +20,7 @@ export const router = createBrowserRouter([{
   children: [
     { path: '/', element: <HomePage /> },
     { path: '/explore', element: <ExplorePage /> },
+    { path: '/chat', element: <ChatPage /> },
     { path: '/planner', element: <PlannerPage /> },
     { path: '/itinerary/:id', element: <ItineraryPage /> },
     { path: '/shared/:token', element: <SharedItineraryPage /> },

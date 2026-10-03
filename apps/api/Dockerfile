@@ -5,9 +5,11 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
 
 WORKDIR /app
 ARG INSTALL_E5=false
-COPY requirements.txt requirements-e5.txt ./
+ARG INSTALL_ML=false
+COPY requirements.txt requirements-e5.txt requirements-ml.txt ./
 RUN pip install --no-cache-dir -r requirements.txt \
     && if [ "$INSTALL_E5" = "true" ]; then pip install --no-cache-dir -r requirements-e5.txt; fi
+RUN if [ "$INSTALL_ML" = "true" ]; then pip install --no-cache-dir -r requirements-ml.txt; fi
 COPY . .
 
 EXPOSE 8000

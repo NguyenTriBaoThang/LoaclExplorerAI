@@ -3,7 +3,7 @@ from app.core.enums import normalize_intent_tag
 
 
 class RecommendationService:
-    """Transparent tag and constraint scoring; no trained AI model is used."""
+    """Transparent fallback score for candidates when no trained ranker is available."""
 
     def score(self, experience: Experience, weights: dict[str, float], group_size: int, budget_vnd: int) -> tuple[float, list[str]]:
         tags = {normalize_intent_tag(tag) for tag in (experience.intent_tags or [])}

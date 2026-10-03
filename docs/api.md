@@ -4,7 +4,15 @@ Base URL: `http://localhost:8000`. Swagger UI: `/docs`. Datetime nhận ISO 8601
 
 ## Health
 
-`GET /health` → `{ "status": "ok" }`.
+`GET /health` returns `{ "status": "ok" }`.
+
+## Local ML inference
+
+Optional local supervised models are separate from the prompt-backed LLM workflows and the existing E5 semantic-search model. See [training, data provenance, artifact placement, and model safety](ml-training-and-data.md).
+
+- `GET /api/ml/status` reports local ranker/flood bundle configuration and metadata.
+- `POST /api/ml/rank-experiences` ranks feasible candidates; rank scores are not probabilities. The same local ranker can break ties among earliest feasible candidates in `POST /api/itineraries/plan` and rank re-plan replacements. Planning hard constraints remain authoritative, and responses expose `explanation.ranking_model_version` when ML ranking was used.
+- `POST /api/ml/flood-risk` returns advisory flood-risk probabilities; it does not confirm a closure and does not alter routing. It returns 503 until a real-label flood bundle is installed; demo-mode bundles are rejected.
 
 ## Catalog
 

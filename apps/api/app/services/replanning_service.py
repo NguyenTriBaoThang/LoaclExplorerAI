@@ -24,6 +24,7 @@ from app.models.entities import (
 from app.prompts.registry import catalog
 from app.schemas.ai import ReplanProposal, ReplanProposals, XAIExplanation
 from app.services.availability_service import AvailabilityService
+from app.services.ml_ranker_service import MLRankerUnavailable, ranker_service
 from app.services.prompt_service import InvalidStructuredOutput, PromptRunner
 from app.services.routing_service import RoutingService
 
@@ -41,6 +42,7 @@ class ReplanCandidate:
     cost_vnd: int
     cost_diff_vnd: int
     travel_time_diff_min: int
+    eta_min: int
     preserved_intents: list[str]
     lost_intents: list[str]
     ranking_score: float
@@ -239,12 +241,56 @@ class ReplanningService:
                     cost_vnd=cost,
                     cost_diff_vnd=cost - affected.cost_vnd,
                     travel_time_diff_min=new_travel - old_travel,
+                    eta_min=travel_before,
                     preserved_intents=preserved,
                     lost_intents=lost,
                     ranking_score=score,
                     similarity_source=source,
                     code="",
                 ))
+
+        if ranker_service.configured and candidates:
+            query_for_ranker = {
+                "user_intent_text": " ".join(sorted(requested)),
+                "user_intent_tags": sorted(requested | set(affected.experience.intent_tags or [])),
+                "lost_experience_text": " ".join(filter(None, [
+                    affected.experience.title or affected.experience.name,
+                    affected.experience.description,
+                    " ".join(affected.experience.intent_tags or []),
+                ])),
+                "remaining_time_min": max(1, (return_deadline - start_time).total_seconds() / 60),
+                "group_size": itinerary.group_size,
+                "budget_remaining_vnd": budget_remaining,
+            }
+            rows = []
+            by_slot = {}
+            for candidate in candidates:
+                row = {
+                    "candidate_experience_id": candidate.experience.id,
+                    "candidate_slot_id": candidate.slot.id,
+                    "candidate_name": candidate.experience.title or candidate.experience.name,
+                    "candidate_tags": candidate.experience.intent_tags or [],
+                    "duration_min": candidate.experience.duration_min,
+                    "price_vnd_per_person": candidate.cost_vnd / max(itinerary.group_size, 1),
+                    "total_cost_vnd": candidate.cost_vnd,
+                    "is_hands_on": candidate.experience.is_hands_on,
+                    "is_indoor": candidate.experience.is_indoor,
+                    "eta_min": candidate.eta_min,
+                    "hard_feasible": True,
+                }
+                rows.append(row)
+                by_slot[(candidate.experience.id, candidate.slot.id)] = candidate
+            try:
+                ranked, _, status = ranker_service.rank(query_for_ranker, rows)
+                for row in ranked:
+                    candidate = by_slot[(row["candidate_experience_id"], row["candidate_slot_id"])]
+                    candidate.ranking_score = row["rank_score"]
+                    candidate.similarity_source = f"xgb-ranker@{status.get('model_version') or 'unknown'}"
+            except MLRankerUnavailable:
+                # Preserve the deterministic tag-similarity order when the optional artifact
+                # is incomplete; /api/ml/status exposes the artifact/dependency failure.
+                for candidate in candidates:
+                    candidate.similarity_source = "tag_overlap_heuristic (ranker unavailable)"
 
         candidates.sort(key=lambda candidate: (-candidate.ranking_score, candidate.cost_diff_vnd, candidate.travel_time_diff_min))
         for index, candidate in enumerate(candidates[:2]):
@@ -345,7 +391,11 @@ class ReplanningService:
             new_version=itinerary.current_version,
             preserved_intents=(next((p.preserved_intents for p in proposals.proposals if p.is_recommended), []) if proposals.proposals else []),
             lost_intents=(next((p.lost_intents for p in proposals.proposals if p.is_recommended), []) if proposals.proposals else []),
-            comparative_metrics={"proposals": [p.model_dump() for p in proposals.proposals], "solver_candidates": solver_options},
+            comparative_metrics={
+                "proposals": [p.model_dump() for p in proposals.proposals],
+                "solver_candidates": solver_options,
+                "candidate_ranking_sources": sorted({item.similarity_source for item in candidates}),
+            },
             explanation_vi=explanation.core_explanation_vi if explanation else None,
             reason_codes=["SLOT_CANCELLED", "REPLAN_PROPOSAL"],
             rejected_candidates=[item for item in solver_options if item["candidate_experience_id"] not in {p.candidate_experience_id for p in proposals.proposals}],
@@ -450,6 +500,7 @@ class ReplanningService:
                 "cost_diff_vnd": candidate.cost_diff_vnd,
                 "travel_time_diff_min": candidate.travel_time_diff_min,
                 "total_travel_time_s": total_travel_min * 60,
+                "candidate_ranking_source": candidate.similarity_source,
             },
             explanation_vi=f"Đã áp dụng phương án {proposal_code} theo xác nhận của người dùng.",
             reason_codes=["SLOT_CANCELLED", "USER_ACCEPTED_REPLAN"],

@@ -1,5 +1,7 @@
 from tests.conftest import add_slot
-from app.models.entities import DecisionLog, ItineraryVersion
+from app.models.entities import DecisionLog, Experience, ItineraryVersion
+from app.schemas.planner import PlanRequest
+from app.services.planner_service import PlannerService
 
 PLAN = {
     "start_at": "2030-10-01T09:00:00+07:00",
@@ -29,6 +31,45 @@ def test_feasible_plan(client, db_session, sample_experience):
     restored = client.get(f"/api/itineraries/{body['itinerary_id']}")
     assert restored.status_code == 200
     assert restored.json()["stops"][0]["experience_id"] == sample_experience.id
+
+
+def test_planner_uses_ranker_only_to_break_feasible_same_time_ties(db_session, sample_experience):
+    add_slot(db_session, sample_experience)
+    alternative = Experience(
+        poi=sample_experience.poi,
+        provider=sample_experience.provider,
+        name="Museum visit",
+        description="A passive cultural visit",
+        intent_tags=["culture"],
+        duration_min=60,
+        is_hands_on=False,
+        is_indoor=True,
+        indoor=True,
+        price_basis="per_person",
+        price_vnd=50_000,
+        verification_status="simulated",
+    )
+    db_session.add(alternative)
+    db_session.flush()
+    add_slot(db_session, alternative)
+
+    class FakeRanker:
+        configured = True
+
+        def rank(self, query, candidates):
+            ranked = [
+                {**candidate, "rank_score": 1.0 if candidate["candidate_experience_id"] == alternative.id else 0.0}
+                for candidate in candidates
+            ]
+            return ranked, [], {"model_version": "test-ranker-v1"}
+
+    response = PlannerService(db_session, ranker=FakeRanker()).plan(PlanRequest.model_validate(PLAN))
+    assert response["stops"][0]["experience_id"] == alternative.id
+    assert response["explanation"]["ranking_model_version"] == "test-ranker-v1"
+
+    decision = db_session.query(DecisionLog).filter_by(itinerary_id=response["itinerary_id"]).one()
+    assert decision.model_version == "test-ranker-v1"
+    assert "ML_RANKER" in decision.reason_codes
 
 
 def test_budget_too_low_returns_no_feasible_plan(client, db_session, sample_experience):

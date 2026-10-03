@@ -1,5 +1,26 @@
 export type DataMode = 'real' | 'simulated' | 'replay'
 
+export interface ChatConstraints {
+  group_size: number | null
+  start_time: string | null
+  return_deadline: string | null
+  budget_vnd: number | null
+  travel_mode: 'motorcycle' | 'walking' | 'car' | 'transit'
+  intent_weights: Record<string, number>
+  locked_pois: string[]
+  is_complete: boolean
+  missing_fields: string[]
+  clarification_question_vi: string | null
+}
+
+export interface ChatReply {
+  status: 'parsed'
+  conversation_id: string | null
+  prompt_version: string
+  reply: string
+  structured_constraints: ChatConstraints
+}
+
 export interface AuthUser {
   id: string
   email: string
@@ -100,5 +121,6 @@ export interface Itinerary {
     reason_codes: string[]
     evidence_refs: string[]
     uncertainty: string[]
+    ranking_model_version?: string | null
   }
 }

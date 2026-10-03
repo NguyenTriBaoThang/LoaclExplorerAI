@@ -19,6 +19,7 @@ import { useAuth } from '../auth'
 import { logout } from '../api/client'
 
 const links = [
+  { to: '/chat', label: 'Chat với AI' },
   { to: '/explore', label: 'Khám phá trải nghiệm' },
   { to: '/planner', label: 'Lập lịch trình' },
   { to: '/provider', label: 'Dành cho đối tác' },
@@ -102,7 +103,7 @@ export function AppLayout() {
 
           {/* Header Action / User Menu Area */}
           <div className="header-actions-area">
-            <NavLink to="/planner" className="header-cta-3d">
+            <NavLink to="/chat" className="header-cta-3d">
               <span>Lên Lịch Ngay</span>
               <Sparkles size={15} />
             </NavLink>
