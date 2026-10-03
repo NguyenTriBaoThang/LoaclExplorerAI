@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import * as THREE from 'three'
 import { Sparkles, Compass, Eye, Sun, Moon } from 'lucide-react'
+import { useTheme } from '../../theme'
 
 interface HoveredPoint {
   name: string
@@ -14,7 +15,10 @@ interface HoveredPoint {
 export function CityHero3D() {
   const containerRef = useRef<HTMLDivElement>(null)
   const [hoveredPoint, setHoveredPoint] = useState<HoveredPoint | null>(null)
-  const [themeMode, setThemeMode] = useState<'night' | 'day'>('night')
+  const theme = useTheme()
+  const [themeMode, setThemeMode] = useState<'night' | 'day'>(theme === 'light' ? 'day' : 'night')
+  // Follow the global theme; the Moon/Sun buttons still override locally.
+  useEffect(() => setThemeMode(theme === 'light' ? 'day' : 'night'), [theme])
   const [activeDistrict, setActiveDistrict] = useState('Quận 1')
 
   const themeRef = useRef(themeMode)

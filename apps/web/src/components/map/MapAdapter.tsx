@@ -3,6 +3,7 @@ import { Marker, MapContainer, Popup, TileLayer, useMap } from 'react-leaflet'
 import type { LatLngExpression } from 'leaflet'
 import { divIcon } from 'leaflet'
 import { MapPin, Layers, Sparkles } from 'lucide-react'
+import { useTheme } from '../../theme'
 
 export interface MapPoint {
   id: string
@@ -43,8 +44,8 @@ const TILE_PRESETS = {
   },
   osm: {
     name: 'Sáng Thanh Lịch',
-    url: 'https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',
-    attribution: '&copy; OpenStreetMap contributors',
+    url: 'https://server.arcgisonline.com/ArcGIS/rest/services/Canvas/World_Light_Gray_Base/MapServer/tile/{z}/{y}/{x}',
+    attribution: '&copy; Esri &copy; OpenStreetMap contributors',
   },
 }
 
@@ -59,7 +60,10 @@ export function MapAdapter({
   onSelect?: (id: string) => void
   className?: string
 }) {
-  const [styleMode, setStyleMode] = useState<'dark' | 'osm'>('dark')
+  const theme = useTheme()
+  const [styleMode, setStyleMode] = useState<'dark' | 'osm'>(theme === 'light' ? 'osm' : 'dark')
+  // Follow the global theme; the map's own toggle still overrides until the next theme change.
+  useEffect(() => setStyleMode(theme === 'light' ? 'osm' : 'dark'), [theme])
   const selected = points.find((point) => point.id === selectedId)
   const center: LatLngExpression = [10.775, 106.700]
 
