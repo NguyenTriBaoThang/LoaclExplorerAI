@@ -1,6 +1,6 @@
 import { ArrowUpRight, Clock3, MapPin, Users, Sparkles, Compass } from 'lucide-react'
 import type { Experience } from '../../types'
-import { SimulatedBadge } from '../common/StatusBadge'
+import { VerificationBadge } from '../common/StatusBadge'
 import { TiltCard3D } from '../3d/TiltCard3D'
 import { useTranslation } from '../../i18n'
 
@@ -96,8 +96,26 @@ export function ExperienceCard({
             <MapPin size={13} className="text-emerald" />
             {slot ? t('explore.slotNotice', { time: time || '' }) : t('explore.noFixedSlot')}
           </span>
-          <SimulatedBadge />
+          <VerificationBadge status={experience.data_mode === 'real' ? 'verified' : 'simulated'} />
         </div>
+        {experience.data_mode === 'real' && slot?.confirmed_at && slot.expires_at && (
+          <small className="slot-freshness-note">
+            Cơ sở xác nhận lúc {new Date(slot.confirmed_at).toLocaleString()} · còn hiệu lực đến {new Date(slot.expires_at).toLocaleString()}
+          </small>
+        )}
+        {experience.data_mode === 'real' && experience.source_evidence?.[0] && (
+          <a
+            className="source-evidence-link"
+            href={experience.source_evidence[0].source_uri}
+            target="_blank"
+            rel="noreferrer"
+            onClick={(event) => event.stopPropagation()}
+            title={`Nguồn xác nhận ${experience.source_evidence[0].observed_at || ''}; hết hạn ${experience.source_evidence[0].expires_at || ''}`}
+          >
+            {experience.source_evidence[0].source_label || 'Xem nguồn đã duyệt'}
+            {experience.source_evidence[0].expires_at && ` · đến ${new Date(experience.source_evidence[0].expires_at).toLocaleDateString()}`}
+          </a>
+        )}
       </div>
     </TiltCard3D>
   )

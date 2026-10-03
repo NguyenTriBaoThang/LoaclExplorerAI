@@ -9,12 +9,23 @@ class ExperienceDraftRequest(BaseModel):
     poi_id: str = Field(min_length=1, max_length=36)
     title: str = Field(min_length=2, max_length=180)
     description: str = Field(min_length=1, max_length=10000)
+    primary_intent: Literal["thủ_công", "ẩm_thực", "văn_hóa", "thư_giãn"]
     intent_tags: list[str] = Field(default_factory=list, max_length=30)
     is_hands_on: bool = False
     is_indoor: bool = True
     duration_min: int = Field(ge=10, le=1440)
     price_vnd: int = Field(ge=0)
     price_basis: Literal["per_person", "per_group"] = "per_person"
+
+
+class POIDraftRequest(BaseModel):
+    name: str = Field(min_length=2, max_length=180)
+    description: str = Field(default="", max_length=10000)
+    district: str | None = Field(default=None, max_length=120)
+    latitude: float = Field(ge=-90, le=90)
+    longitude: float = Field(ge=-180, le=180)
+    category: str = Field(min_length=2, max_length=40)
+    address: str = Field(min_length=5, max_length=300)
 
 
 class SlotCreateRequest(BaseModel):

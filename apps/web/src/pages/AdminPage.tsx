@@ -21,6 +21,14 @@ type QueueItem = {
   name?: string
   title?: string
   source_uri?: string
+  source_type?: string
+  source_label?: string | null
+  license?: string | null
+  target_type?: string | null
+  target_id?: string | null
+  fields_covered?: string[]
+  observed_at?: string | null
+  expires_at?: string | null
   status: string
 }
 
@@ -75,13 +83,12 @@ export function AdminPage() {
   async function load() {
     setLoading(true)
     try {
-      const [metrics, accounts, providerRows, pending, simulated, nearDuplicates, logs] =
+      const [metrics, accounts, providerRows, pending, nearDuplicates, logs] =
         await Promise.all([
           adminApi.dashboard(),
           adminApi.users(),
           adminApi.providers(),
           adminApi.moderation('pending'),
-          adminApi.moderation('simulated'),
           adminApi.duplicates(),
           adminApi.audit(),
         ])
@@ -89,9 +96,9 @@ export function AdminPage() {
       setUsers(accounts)
       setProviders(providerRows)
       setQueue({
-        pois: [...pending.pois, ...simulated.pois],
-        experiences: [...pending.experiences, ...simulated.experiences],
-        evidence: [...pending.evidence, ...simulated.evidence],
+        pois: pending.pois,
+        experiences: pending.experiences,
+        evidence: pending.evidence,
       })
       setDuplicates(nearDuplicates)
       setAudit(logs)
@@ -297,6 +304,10 @@ export function AdminPage() {
       {/* Tab 1: Moderation Queue */}
       {activeTab === 'queue' && (
         <div className="admin-tab-content animate-fadeIn">
+          <div className="inline-alert-3d">
+            <AlertCircle size={16} />
+            <span>Dữ liệu mô phỏng không được duyệt thành dữ liệu vận hành. Chỉ duyệt sau khi nguồn bao phủ đủ trường, đúng phiên bản và còn hạn.</span>
+          </div>
           {(['pois', 'experiences', 'evidence'] as const).map((kind) => (
             <section key={kind} className="admin-section-card mb-6">
               <div className="admin-section-header">
@@ -315,6 +326,17 @@ export function AdminPage() {
                           <span className="item-status-pill">{item.status}</span>
                           <span className="item-id-snippet">ID: {item.id.slice(0, 10)}</span>
                         </div>
+                        {kind === 'evidence' && (
+                          <div className="item-sub-meta">
+                            <span>{item.source_type || 'source'} · {item.target_type || 'no target'}</span>
+                            <span>Fields: {(item.fields_covered || []).join(', ') || 'none'}</span>
+                            <span>License: {item.license || 'not specified'}</span>
+                            <span>Target: {item.target_id || 'unlinked'}</span>
+                            <span>Observed: {item.observed_at ? new Date(item.observed_at).toLocaleString() : 'missing'}</span>
+                            <span>Expires: {item.expires_at ? new Date(item.expires_at).toLocaleString() : 'missing'}</span>
+                            {item.source_uri && <a href={item.source_uri} target="_blank" rel="noreferrer">Open source</a>}
+                          </div>
+                        )}
                       </div>
 
                       <div className="item-action-btns">

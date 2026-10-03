@@ -4,10 +4,11 @@ from uuid import uuid4
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session, joinedload
+from geoalchemy2.elements import WKTElement
 
 from app.api.dependencies import get_db, require_roles
 from app.models.entities import AuditLog, Event, Evidence, Experience, ExperienceSlot, ItineraryStop, POI, Provider, User
-from app.schemas.management import EvidenceCreateRequest, ExperienceDraftRequest, SlotCreateRequest, SlotUpdateRequest
+from app.schemas.management import EvidenceCreateRequest, ExperienceDraftRequest, POIDraftRequest, SlotCreateRequest, SlotUpdateRequest
 from app.services.auth_service import hash_password
 from app.services.evidence_service import REQUIRED_FIELDS, target_revision, utc_now
 
@@ -38,7 +39,8 @@ def list_provider_experiences(user: User = Depends(require_roles("provider")), d
     provider = _provider(db, user)
     items = db.scalars(select(Experience).where(Experience.provider_id == provider.id).options(joinedload(Experience.poi))).unique().all()
     return [{"id": item.id, "poi_id": item.poi_id, "title": item.title, "description": item.description,
-             "intent_tags": item.intent_tags, "is_hands_on": item.is_hands_on, "is_indoor": item.is_indoor,
+             "primary_intent": item.primary_intent, "intent_tags": item.intent_tags,
+             "is_hands_on": item.is_hands_on, "is_indoor": item.is_indoor,
              "duration_min": item.duration_min, "price_vnd": item.price_vnd, "price_basis": item.price_basis,
              "verification_status": item.verification_status, "poi_name": item.poi.name,
              "slots": [{"id": slot.id, "start_at": slot.start_at, "end_at": slot.end_at,
@@ -48,6 +50,57 @@ def list_provider_experiences(user: User = Depends(require_roles("provider")), d
             for item in items]
 
 
+@router.get("/pois")
+def list_provider_pois(user: User = Depends(require_roles("provider")), db: Session = Depends(get_db)):
+    provider = _provider(db, user)
+    experience_poi_ids = select(Experience.poi_id).where(Experience.provider_id == provider.id)
+    items = db.scalars(select(POI).where(
+        (POI.submitted_by_provider_id == provider.id) | POI.id.in_(experience_poi_ids)
+    ).order_by(POI.name)).all()
+    return [{"id": item.id, "name": item.name, "description": item.description, "district": item.district,
+             "latitude": item.latitude, "longitude": item.longitude, "category": item.category,
+             "address": item.address, "verification_status": item.verification_status,
+             "data_revision": item.data_revision} for item in items]
+
+
+@router.post("/pois", status_code=201)
+def create_poi(payload: POIDraftRequest, user: User = Depends(require_roles("provider")), db: Session = Depends(get_db)):
+    provider = _provider(db, user)
+    poi = POI(
+        id=str(uuid4()), name=payload.name.strip(), description=payload.description.strip(),
+        district=payload.district, latitude=payload.latitude, longitude=payload.longitude,
+        geom=WKTElement(f"POINT({payload.longitude} {payload.latitude})", srid=4326),
+        category=payload.category.strip(), address=payload.address.strip(),
+        submitted_by_provider_id=provider.id, verification_status="pending", data_revision=1,
+    )
+    db.add(poi)
+    _audit(db, user, "poi.created", "poi", poi.id, {"status": "pending", "data_revision": poi.data_revision})
+    db.commit()
+    return {"id": poi.id, "verification_status": poi.verification_status, "data_revision": poi.data_revision}
+
+
+@router.patch("/pois/{poi_id}")
+def update_poi(poi_id: str, payload: POIDraftRequest, user: User = Depends(require_roles("provider")), db: Session = Depends(get_db)):
+    provider = _provider(db, user)
+    poi = db.get(POI, poi_id)
+    if poi is None:
+        raise HTTPException(status_code=404, detail={"code": "POI_NOT_FOUND", "message": "POI not found."})
+    owns_poi = poi.submitted_by_provider_id == provider.id or (db.scalar(select(func.count(Experience.id)).where(
+        Experience.poi_id == poi.id, Experience.provider_id == provider.id,
+    )) or 0) > 0
+    if not owns_poi:
+        raise HTTPException(status_code=403, detail={"code": "POI_FORBIDDEN", "message": "Providers can update only their own POIs."})
+    for key, value in payload.model_dump().items():
+        setattr(poi, key, value.strip() if isinstance(value, str) else value)
+    poi.geom = WKTElement(f"POINT({payload.longitude} {payload.latitude})", srid=4326)
+    poi.data_revision += 1
+    if poi.verification_status != "hidden":
+        poi.verification_status = "pending"
+    _audit(db, user, "poi.updated", "poi", poi.id, {"data_revision": poi.data_revision, "previous_evidence_invalidated": True})
+    db.commit()
+    return {"id": poi.id, "verification_status": poi.verification_status, "data_revision": poi.data_revision}
+
+
 @router.post("/evidence", status_code=201)
 def submit_evidence(payload: EvidenceCreateRequest, user: User = Depends(require_roles("provider")), db: Session = Depends(get_db)):
     provider = _provider(db, user)
@@ -55,9 +108,9 @@ def submit_evidence(payload: EvidenceCreateRequest, user: User = Depends(require
     if target is None:
         raise HTTPException(status_code=404, detail={"code": "EVIDENCE_TARGET_NOT_FOUND", "message": "Target record not found."})
     if payload.target_type == "poi":
-        owns_target = db.scalar(select(func.count(Experience.id)).where(
+        owns_target = target.submitted_by_provider_id == provider.id or (db.scalar(select(func.count(Experience.id)).where(
             Experience.poi_id == target.id, Experience.provider_id == provider.id,
-        )) > 0
+        )) or 0) > 0
     else:
         owns_target = target.provider_id == provider.id
     if not owns_target:
@@ -95,7 +148,8 @@ def create_experience(payload: ExperienceDraftRequest, user: User = Depends(requ
     if poi is None:
         raise HTTPException(status_code=404, detail={"code": "POI_NOT_FOUND", "message": "Choose an existing point of interest."})
     item = Experience(id=str(uuid4()), provider_id=provider.id, poi_id=poi.id, name=payload.title, title=payload.title,
-                      description=payload.description, intent_tags=payload.intent_tags, is_hands_on=payload.is_hands_on,
+                      description=payload.description, primary_intent=payload.primary_intent,
+                      intent_tags=payload.intent_tags, is_hands_on=payload.is_hands_on,
                       is_indoor=payload.is_indoor, indoor=payload.is_indoor, duration_min=payload.duration_min,
                       price_basis=payload.price_basis, price_vnd=payload.price_vnd, verification_status="pending")
     db.add(item)
@@ -196,6 +250,8 @@ def update_slot(slot_id: str, payload: SlotUpdateRequest, user: User = Depends(r
     if payload.status == "open" and payload.available_reported == 0:
         raise HTTPException(status_code=422, detail={"code": "OPEN_SLOT_HAS_NO_CAPACITY", "message": "Use full status when no seats remain."})
     now = utc_now()
+    if slot.expires_at is not None and (slot.expires_at.tzinfo is None or slot.expires_at.utcoffset() is None):
+        slot.expires_at = slot.expires_at.replace(tzinfo=timezone.utc)
     if payload.expires_at is not None:
         slot.expires_at = payload.expires_at.astimezone(now.tzinfo)
     if payload.status == "open":
@@ -237,7 +293,11 @@ def provider_audit(user: User = Depends(require_roles("provider")), db: Session 
     provider = _provider(db, user)
     experience_ids = db.scalars(select(Experience.id).where(Experience.provider_id == provider.id)).all()
     slot_ids = db.scalars(select(ExperienceSlot.id).join(Experience).where(Experience.provider_id == provider.id)).all()
-    target_ids = [*experience_ids, *slot_ids]
+    poi_ids = db.scalars(select(POI.id).where(
+        (POI.submitted_by_provider_id == provider.id) | POI.id.in_(select(Experience.poi_id).where(Experience.provider_id == provider.id))
+    )).all()
+    evidence_ids = db.scalars(select(Evidence.id).where(Evidence.submitted_by == user.id)).all()
+    target_ids = [*experience_ids, *slot_ids, *poi_ids, *evidence_ids]
     if not target_ids:
         return []
     logs = db.scalars(select(AuditLog).where(
@@ -245,3 +305,14 @@ def provider_audit(user: User = Depends(require_roles("provider")), db: Session 
     ).order_by(AuditLog.created_at.desc()).limit(100)).all()
     return [{"id": log.id, "action": log.action, "target_type": log.target_type, "target_id": log.target_id,
              "details": log.details, "created_at": log.created_at} for log in logs]
+
+
+@router.get("/evidence")
+def provider_evidence(user: User = Depends(require_roles("provider")), db: Session = Depends(get_db)):
+    _provider(db, user)
+    items = db.scalars(select(Evidence).where(Evidence.submitted_by == user.id).order_by(Evidence.created_at.desc()).limit(500)).all()
+    return [{"id": item.id, "target_type": item.target_type, "target_id": item.target_id,
+             "source_uri": item.source_uri, "source_type": item.source_type, "source_label": item.source_label,
+             "license": item.license, "fields_covered": item.fields_covered or [], "observed_at": item.observed_at,
+             "expires_at": item.expires_at, "verification_status": item.verification_status,
+             "reviewed_at": item.reviewed_at, "notes": item.notes} for item in items]

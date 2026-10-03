@@ -33,8 +33,8 @@ def dashboard(user: User = Depends(require_roles("admin")), db: Session = Depend
     return {
         "users": db.scalar(select(func.count(User.id))) or 0,
         "providers": db.scalar(select(func.count(Provider.id))) or 0,
-        "pending_experiences": db.scalar(select(func.count(Experience.id)).where(Experience.verification_status.in_(["pending", "simulated"]))) or 0,
-        "pending_pois": db.scalar(select(func.count(POI.id)).where(POI.verification_status.in_(["pending", "simulated"]))) or 0,
+        "pending_experiences": db.scalar(select(func.count(Experience.id)).where(Experience.verification_status == "pending")) or 0,
+        "pending_pois": db.scalar(select(func.count(POI.id)).where(POI.verification_status == "pending")) or 0,
         "pending_evidence": db.scalar(select(func.count(Evidence.id)).where(Evidence.verification_status == "pending")) or 0,
         "unknown_slot_capacity": db.scalar(select(func.count(ExperienceSlot.id)).where(ExperienceSlot.available_reported.is_(None))) or 0,
         "expired_evidence": db.scalar(select(func.count(Evidence.id)).where(Evidence.expires_at.is_not(None), Evidence.expires_at < datetime.now(timezone.utc))) or 0,

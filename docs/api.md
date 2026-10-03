@@ -40,7 +40,7 @@ Catalog trả `verification_status` và `data_mode`. Dữ liệu seed là `simul
 }
 ```
 
-Response gồm `request_id`, `itinerary_id`, `data_mode`, `data_as_of`, `feasibility_status`, tổng chi phí, stops, route legs và explanation. `feasibility_status` có thể là `feasible` hoặc `tentative`; no-plan trả HTTP 422 với code `NO_FEASIBLE_PLAN`. Route leg luôn ghi `provider: mock`, `is_realtime: false`.
+Response gồm `request_id`, `itinerary_id`, `data_mode`, `data_as_of`, `feasibility_status`, tổng chi phí, stops, route legs và explanation. `data_mode` là `real`, `simulated` hoặc `mixed` theo catalog được chọn; mỗi stop có `data_status`, nguồn POI/trải nghiệm/slot, `slot_confirmed_at` và `slot_expires_at`. `explanation.evidence_refs` liệt kê ID evidence được dùng. `feasibility_status` có thể là `feasible` hoặc `tentative`; no-plan trả HTTP 422 với code `NO_FEASIBLE_PLAN`. Route leg luôn ghi `provider: mock`, `is_realtime: false`, và được nêu riêng khỏi trạng thái nguồn catalog.
 
 `GET /api/itineraries/{id}` tải lại kế hoạch đã lưu.
 
@@ -92,6 +92,14 @@ Current error codes also include `LLM_NOT_CONFIGURED`, `LLM_PROVIDER_ERROR`, `IN
 - `GET /api/experience-search?q=...&semantic=true` — optional local multilingual E5 ranking. Supports intent/topic, indoor/outdoor, slot/time, group-size, price and radius filters. The API returns HTTP 503 until the E5 package and a local model directory are configured.
 - `/api/provider/*` — signed-in provider account routes for profile, own experience drafts, price/duration edits, slots, cancellations, affected-itinerary counts and operation history. New/edited experiences return to moderation.
 - `/api/admin/*` — administrator dashboard/data-quality counters, user-role/account activation, provider creation, POI/experience/evidence moderation, probable duplicate discovery/explicit merge, audit history.
+
+Sourced catalog additions:
+
+- `POST/PATCH /api/provider/pois[/<id>]` — submit or revise the provider's POI with address and coordinates; revisions return to moderation.
+- `POST /api/provider/evidence` — attach source URI/type/license, covered fields, observed time and required expiry to an owned POI or experience. Source evidence must be reviewed before approving its target.
+- `POST /api/provider/experiences/{id}/slots` — requires `expires_at`; API records a provider-confirmed source and server-side `confirmed_at`. `PATCH /api/provider/slots/{id}` requires a fresh expiry to open a slot.
+- Admin evidence approval rejects unlinked, expired or stale-revision evidence. POI/experience approval fails until all required fields are covered by current approved evidence; experience approval also requires an approved POI.
+- Catalog payloads expose `data_mode` and `source_evidence`. Expired evidence/slot confirmations are excluded from operational recommendations. See [sourced catalog workflow](sourced-catalog.md).
 
 Itinerary planning accepts optional origin/destination latitude/longitude and labels, plus `locked_poi_ids`. When a destination is supplied, the solver includes the last route leg in its hard return-deadline check; responses include `estimated_return_at` and the return deadline. The planner UI currently selects origin/destination from known catalog POIs; it does not geocode free-form addresses.
 

@@ -201,6 +201,7 @@ class ProviderActionPreviewRequest(StrictModel):
 
 class ProviderActionConfirmRequest(StrictModel):
     confirmation_token: str = Field(min_length=20, max_length=4096)
+    expires_at: datetime | None = None
 
 
 class FeedbackLabelRequest(StrictModel):

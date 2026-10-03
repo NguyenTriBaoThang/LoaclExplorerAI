@@ -19,6 +19,26 @@ class ErrorEnvelope(BaseModel):
     error: ErrorDetail
 
 
+class SourceEvidenceRead(BaseModel):
+    id: str
+    source_uri: str
+    source_type: str
+    source_label: str | None = None
+    license: str | None = None
+    fields_covered: list[str] = Field(default_factory=list)
+    observed_at: datetime | None = None
+    expires_at: datetime | None = None
+    verification_status: str
+    target_type: str | None = None
+
+    @field_validator("observed_at", "expires_at", mode="before")
+    @classmethod
+    def require_aware_evidence_times(cls, value):
+        if isinstance(value, datetime) and (value.tzinfo is None or value.utcoffset() is None):
+            return value.replace(tzinfo=timezone.utc)
+        return value
+
+
 class SlotRead(ORMModel):
     id: str
     start_at: datetime
@@ -27,6 +47,9 @@ class SlotRead(ORMModel):
     available_reported: int | None
     status: str
     version: int
+    confirmed_at: datetime | None = None
+    expires_at: datetime | None = None
+    source_evidence: list[SourceEvidenceRead] = Field(default_factory=list)
     data_mode: str = "simulated"
 
     @field_validator("start_at", "end_at", "confirmed_at", "expires_at", mode="before", check_fields=False)
@@ -46,7 +69,9 @@ class POIRead(ORMModel):
     category: str
     address: str
     verification_status: str
+    source_evidence: list[SourceEvidenceRead] = Field(default_factory=list)
     data_mode: str = "simulated"
+    data_status: str = "simulated"
 
 
 class ExperienceRead(ORMModel):
@@ -68,4 +93,5 @@ class ExperienceRead(ORMModel):
     verification_status: str
     poi: POIRead
     slots: list[SlotRead] = Field(default_factory=list)
+    source_evidence: list[SourceEvidenceRead] = Field(default_factory=list)
     data_mode: str = "simulated"

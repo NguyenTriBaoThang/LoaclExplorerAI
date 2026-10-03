@@ -16,7 +16,7 @@ import { Link, useSearchParams } from 'react-router-dom'
 import { apiErrorMessage, getExperiences, searchExperiences } from '../api/client'
 import { ExperienceCard } from '../components/experience/ExperienceCard'
 import { MapAdapter } from '../components/map/MapAdapter'
-import { SimulatedBadge } from '../components/common/StatusBadge'
+import { SimulatedBadge, VerificationBadge } from '../components/common/StatusBadge'
 import type { Experience } from '../types'
 import { useTranslation } from '../i18n'
 
@@ -173,7 +173,8 @@ export function ExplorePage() {
           </p>
         </div>
         <div className="title-extra-badges">
-          <SimulatedBadge />
+          {items.some((item) => item.data_mode !== 'real') && <SimulatedBadge />}
+          {items.some((item) => item.data_mode === 'real') && <VerificationBadge status="verified" />}
         </div>
       </div>
 

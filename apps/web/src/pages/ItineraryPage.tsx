@@ -45,8 +45,11 @@ const getReasonCopy = (code: string, locale: string): string => {
     WITHIN_BUDGET: 'Chi phí ước tính nằm an toàn trong khoảng ngân sách bạn đặt.',
     SLOT_AVAILABLE: 'Khung giờ trải nghiệm khớp với mốc thời gian di chuyển của chuyến đi.',
     CAPACITY_UNKNOWN: 'Sức chứa chưa được cập nhật chính thức; hãy liên hệ trước khi đến.',
-    MOCK_ROUTING: 'Thời gian di chuyển được tính theo khoảng cách thực tế giữa các quận TP. HCM.',
+    MOCK_ROUTING: 'Thời gian di chuyển là ước tính theo ma trận mô phỏng, không phải dữ liệu giao thông thời gian thực.',
     SIMULATED_DATA: 'Dữ liệu trải nghiệm và giá tiền trong bản demo mô phỏng.',
+    VERIFIED_DATA: 'POI, hoạt động và khung giờ có nguồn được duyệt, còn hiệu lực tại thời điểm lập lịch.',
+    STALE_DATA: 'Một phần bằng chứng đã cũ hoặc hết hạn; cần xác minh lại trước khi đi.',
+    UNVERIFIED_DATA: 'Một phần dữ liệu chưa được xác minh nguồn.',
     LOCKED_ACTIVITY: 'Trải nghiệm đã được bạn ghim cố định trong hành trình.',
   }
   const en: Record<string, string> = {
@@ -54,8 +57,11 @@ const getReasonCopy = (code: string, locale: string): string => {
     WITHIN_BUDGET: 'Estimated expense is safely within your group budget limit.',
     SLOT_AVAILABLE: 'Experience timeslot synchronizes with transit schedule.',
     CAPACITY_UNKNOWN: 'Capacity not yet officially reported; please call ahead.',
-    MOCK_ROUTING: 'Transit duration calculated with real HCMC inter-district distances.',
+    MOCK_ROUTING: 'Transit duration is estimated with a simulated routing matrix, not live traffic data.',
     SIMULATED_DATA: 'Experience and pricing data in transparent simulated demo mode.',
+    VERIFIED_DATA: 'POIs, experiences, and slots have approved, current source evidence at planning time.',
+    STALE_DATA: 'Some evidence is outdated or expired; reconfirm before the trip.',
+    UNVERIFIED_DATA: 'Some catalog data has not been source-verified.',
     LOCKED_ACTIVITY: 'Experience pinned and locked by your request.',
   }
   const dict = locale === 'en' ? en : vi
@@ -66,6 +72,13 @@ const timeLabel = (value: string, locale: string) =>
   new Intl.DateTimeFormat(locale === 'en' ? 'en-US' : 'vi-VN', {
     hour: '2-digit',
     minute: '2-digit',
+    timeZone: 'Asia/Ho_Chi_Minh',
+  }).format(new Date(value))
+
+const dateTimeLabel = (value: string, locale: string) =>
+  new Intl.DateTimeFormat(locale === 'en' ? 'en-US' : 'vi-VN', {
+    dateStyle: 'medium',
+    timeStyle: 'short',
     timeZone: 'Asia/Ho_Chi_Minh',
   }).format(new Date(value))
 
@@ -627,6 +640,39 @@ export function ItineraryPage() {
                           <AlertCircle size={12} /> {t('itinerary.callToConfirm')}
                         </span>
                       )}
+                    </div>
+
+                    <div className="stop-provenance">
+                      <span className={`provenance-state provenance-${stop.data_status}`}>
+                        {locale === 'en'
+                          ? ({ verified: 'Source verified', stale: 'Source expired or outdated', simulated: 'Demo data', unverified: 'Not verified' } as const)[stop.data_status]
+                          : ({ verified: 'Nguồn đã xác minh', stale: 'Nguồn hết hạn hoặc dữ liệu cũ', simulated: 'Dữ liệu trình diễn', unverified: 'Chưa xác minh' } as const)[stop.data_status]}
+                      </span>
+                      {stop.slot_confirmed_at && (
+                        <span>
+                          {locale === 'en' ? 'Slot confirmed' : 'Ca xác nhận'}: {dateTimeLabel(stop.slot_confirmed_at, locale)}
+                        </span>
+                      )}
+                      {stop.slot_expires_at && (
+                        <span>
+                          {locale === 'en' ? 'Slot data expires' : 'Hạn dữ liệu ca'}: {dateTimeLabel(stop.slot_expires_at, locale)}
+                        </span>
+                      )}
+                      {([
+                        [locale === 'en' ? 'Place' : 'Địa điểm', stop.poi.source_evidence ?? []],
+                        [locale === 'en' ? 'Experience' : 'Trải nghiệm', stop.source_evidence],
+                        [locale === 'en' ? 'Availability' : 'Khung giờ', stop.slot_source_evidence],
+                      ] as const).map(([label, evidence]) => evidence.length > 0 && (
+                        <div className="stop-source-group" key={label}>
+                          <span>{label}:</span>
+                          {evidence.map((item) => (
+                            <a key={item.id} href={item.source_uri} target="_blank" rel="noreferrer">
+                              {item.source_label || item.source_type}
+                              {item.expires_at && ` · ${locale === 'en' ? 'expires' : 'hết hạn'} ${dateTimeLabel(item.expires_at, locale)}`}
+                            </a>
+                          ))}
+                        </div>
+                      ))}
                     </div>
                   </div>
                 </article>

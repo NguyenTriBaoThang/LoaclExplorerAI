@@ -11,6 +11,7 @@ from app.models.entities import DecisionLog, Experience, ExperienceSlot, Itinera
 from app.repositories.experience_repository import ExperienceRepository
 from app.schemas.planner import PlanRequest
 from app.services.explanation_service import ExplanationService
+from app.services.evidence_service import entity_is_operationally_verified
 from app.services.availability_service import AvailabilityService
 from app.services.ml_ranker_service import MLRankerUnavailable, ranker_service
 from app.services.planner_engine import HeuristicPlanner, PlannerEngine
@@ -120,7 +121,7 @@ class PlannerService:
         total_cost = 0
         total_travel = 0
         routes: list[dict] = []
-        reason_codes: set[str] = {"SIMULATED_DATA", "MOCK_ROUTING"}
+        reason_codes: set[str] = {"MOCK_ROUTING"}
         unknown_capacity = False
         ranking_model_version = "heuristic-v1"
 
@@ -142,6 +143,8 @@ class PlannerService:
                     continue
                 score, reasons = self.recommender.score(experience, request.intent_weights, request.group_size, request.budget_vnd - total_cost)
                 for slot in sorted(experience.slots, key=lambda item: as_aware(item.start_at)):
+                    if experience.verification_status == "verified" and not self.repository.is_fresh_slot(slot):
+                        continue
                     slot_start, slot_end = as_aware(slot.start_at), as_aware(slot.end_at)
                     if slot_start < start_at or slot_end > end_at or slot_end <= cursor:
                         continue
@@ -210,6 +213,14 @@ class PlannerService:
             previous_poi = (experience.poi.latitude, experience.poi.longitude)
             reason_codes.update(next_item["reasons"])
             reason_codes.add("SLOT_AVAILABLE")
+            if (experience.verification_status == "verified"
+                    and experience.poi.verification_status == "verified"
+                    and self.repository.is_fresh_slot(slot)):
+                reason_codes.add("VERIFIED_DATA")
+            elif experience.verification_status == "simulated" and experience.poi.verification_status == "simulated":
+                reason_codes.add("SIMULATED_DATA")
+            else:
+                reason_codes.add("STALE_DATA")
             if next_item["locked"]:
                 reason_codes.add("LOCKED_ACTIVITY")
             if not next_item["capacity_known"]:
@@ -241,6 +252,18 @@ class PlannerService:
         preserved = sorted(tag for tag in requested_intents if normalize_intent_tag(tag) in provided_intents)
         lost = sorted(requested_intents - set(preserved))
         status = ItineraryStatus.TENTATIVE.value if unknown_capacity else ItineraryStatus.FEASIBLE.value
+        data_statuses = {
+            "verified" if (item["experience"].verification_status == "verified"
+                           and item["experience"].poi.verification_status == "verified"
+                           and entity_is_operationally_verified(self.db, "experience", item["experience"])
+                           and entity_is_operationally_verified(self.db, "poi", item["experience"].poi)
+                           and self.repository.is_fresh_slot(item["slot"]))
+            else "simulated" if (item["experience"].verification_status == "simulated"
+                                 and item["experience"].poi.verification_status == "simulated")
+            else "stale"
+            for item in chosen
+        }
+        itinerary_data_mode = next(iter(data_statuses)) if len(data_statuses) == 1 else "mixed"
         itinerary = Itinerary(
             id=str(uuid4()), user_id=user_id, group_size=request.group_size, budget_vnd=request.budget_vnd,
             start_at=start_at, end_at=end_at, status=status,
@@ -253,7 +276,7 @@ class PlannerService:
                          "origin_latitude": request.origin_latitude, "origin_longitude": request.origin_longitude,
                          "destination_latitude": request.destination_latitude, "destination_longitude": request.destination_longitude,
                          "origin_label": request.origin_label, "destination_label": request.destination_label},
-            estimated_cost_vnd=total_cost, data_mode="simulated",
+            estimated_cost_vnd=total_cost, data_mode="real" if itinerary_data_mode == "verified" else "simulated" if itinerary_data_mode == "simulated" else "mixed",
         )
         self.db.add(itinerary)
         self.db.flush()
@@ -284,6 +307,11 @@ class PlannerService:
         ))
         explanation = self.explainer.explain(sorted(reason_codes), preserved, lost)
         explanation["ranking_model_version"] = ranking_model_version if "ML_RANKER" in reason_codes else None
+        explanation["evidence_refs"] = sorted({
+            evidence["id"]
+            for item in response_stops
+            for evidence in (item["poi"]["source_evidence"] + item["source_evidence"] + item["slot_source_evidence"])
+        })
         self.db.add(DecisionLog(
             itinerary_id=itinerary.id, base_version=0, new_version=1,
             preserved_intents=preserved, lost_intents=lost,
@@ -295,7 +323,7 @@ class PlannerService:
         return {
             "request_id": itinerary.id,
             "itinerary_id": itinerary.id,
-            "data_mode": "simulated",
+            "data_mode": "real" if itinerary_data_mode == "verified" else "simulated" if itinerary_data_mode == "simulated" else "mixed",
             "data_as_of": datetime.now(timezone.utc),
             "feasibility_status": status,
             "estimated_cost_vnd": total_cost,
@@ -308,8 +336,20 @@ class PlannerService:
             "explanation": explanation,
         }
 
-    @staticmethod
-    def _stop_dict(stop: ItineraryStop, experience: Experience, slot: ExperienceSlot, position: int) -> dict:
+    def _stop_dict(self, stop: ItineraryStop, experience: Experience, slot: ExperienceSlot, position: int) -> dict:
+        poi_verified = entity_is_operationally_verified(self.db, "poi", experience.poi)
+        experience_verified = entity_is_operationally_verified(self.db, "experience", experience)
+        slot_verified = self.repository.is_fresh_slot(slot)
+        is_demo = experience.verification_status == "simulated" and experience.poi.verification_status == "simulated"
+        data_status = (
+            "simulated" if is_demo else
+            "verified" if poi_verified and experience_verified and slot_verified else
+            "stale" if experience.verification_status == "verified" and experience.poi.verification_status == "verified" else
+            "unverified"
+        )
+        poi_evidence = self.repository.source_evidence("poi", experience.poi.id, experience.poi.data_revision)
+        experience_evidence = self.repository.source_evidence("experience", experience.id, experience.data_revision)
+        slot_evidence = self.repository.source_evidence("slot", slot.id, slot.version)
         return {
             "id": stop.id or str(uuid4()), "experience_id": experience.id, "slot_id": slot.id,
             "position": position, "name": experience.name, "category": experience.poi.category,
@@ -317,10 +357,18 @@ class PlannerService:
             "duration_min": experience.duration_min, "cost_vnd": experience.price_vnd,
             "locked": stop.locked, "availability_status": slot.status,
             "availability_known": slot.available_reported is not None,
+            "data_status": data_status,
+            "slot_confirmed_at": slot.confirmed_at,
+            "slot_expires_at": slot.expires_at,
+            "source_evidence": experience_evidence,
+            "slot_source_evidence": slot_evidence,
             "poi": {"id": experience.poi.id, "name": experience.poi.name, "description": experience.poi.description,
                     "latitude": experience.poi.latitude, "longitude": experience.poi.longitude,
                     "category": experience.poi.category, "address": experience.poi.address,
-                    "verification_status": experience.poi.verification_status, "data_mode": "simulated"},
+                    "verification_status": experience.poi.verification_status,
+                    "data_mode": "real" if poi_verified else "simulated",
+                    "data_status": "simulated" if experience.poi.verification_status == "simulated" else "verified" if poi_verified else "stale" if experience.poi.verification_status == "verified" else "unverified",
+                    "source_evidence": poi_evidence},
         }
 
     def get_itinerary(self, itinerary_id: str) -> dict | None:
@@ -359,19 +407,41 @@ class PlannerService:
                            "to_label": itinerary.constraints.get("destination_label") or "Điểm về",
                            "distance_m": route.distance_m, "duration_min": route.duration_min,
                            "provider": route.provider, "is_realtime": route.is_realtime})
-        reasons = ["SIMULATED_DATA", "MOCK_ROUTING", "SLOT_AVAILABLE"]
+        current_modes = {stop["data_status"] for stop in stops}
+        reasons = ["MOCK_ROUTING", "SLOT_AVAILABLE"]
+        if "verified" in current_modes:
+            reasons.append("VERIFIED_DATA")
+        if "simulated" in current_modes:
+            reasons.append("SIMULATED_DATA")
+        if "stale" in current_modes:
+            reasons.append("STALE_DATA")
+        if "unverified" in current_modes:
+            reasons.append("UNVERIFIED_DATA")
         if any(not stop["availability_known"] for stop in stops):
             reasons.append("CAPACITY_UNKNOWN")
         intents = itinerary.constraints.get("intent_weights", {})
         requested_intents = {tag for tag, weight in intents.items() if weight > 0}
         provided_intents = {normalize_intent_tag(tag) for stop in itinerary.stops for tag in stop.experience.intent_tags}
         preserved = sorted(tag for tag in requested_intents if normalize_intent_tag(tag) in provided_intents)
+        current_data_mode = (
+            "real" if current_modes == {"verified"} else
+            "simulated" if current_modes == {"simulated"} else
+            "mixed" if current_modes else itinerary.data_mode
+        )
         return {
-            "request_id": itinerary.id, "itinerary_id": itinerary.id, "data_mode": itinerary.data_mode,
+            "request_id": itinerary.id, "itinerary_id": itinerary.id,
+            "data_mode": current_data_mode,
             "data_as_of": itinerary.created_at, "feasibility_status": itinerary.status,
             "estimated_cost_vnd": itinerary.estimated_cost_vnd, "total_travel_min": travel, "stops": stops,
             "start_at": as_aware(itinerary.start_time or itinerary.start_at),
             "return_deadline": as_aware(itinerary.return_deadline or itinerary.end_at),
             "estimated_return_at": (as_aware(stops[-1]["end_at"]) if stops else as_aware(itinerary.end_at)) + timedelta(minutes=(routes[-1]["duration_min"] if routes and routes[-1].get("to_experience_id") is None else 0)),
-            "routes": routes, "explanation": self.explainer.explain(reasons, preserved, sorted(requested_intents - set(preserved))),
+            "routes": routes, "explanation": {
+                **self.explainer.explain(reasons, preserved, sorted(requested_intents - set(preserved))),
+                "evidence_refs": sorted({
+                    evidence["id"]
+                    for item in stops
+                    for evidence in (item["poi"]["source_evidence"] + item["source_evidence"] + item["slot_source_evidence"])
+                }),
+            },
         }

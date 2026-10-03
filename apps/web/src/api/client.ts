@@ -89,12 +89,17 @@ export async function compareItineraries(firstId: string, secondId: string) {
 export const providerApi = {
   profile: async () => (await api.get('/provider/me')).data,
   experiences: async () => (await api.get('/provider/experiences')).data,
+  pois: async () => (await api.get<Array<POI & { data_revision: number }>>('/provider/pois')).data,
+  createPOI: async (payload: Record<string, unknown>) => (await api.post('/provider/pois', payload)).data,
+  updatePOI: async (id: string, payload: Record<string, unknown>) => (await api.patch(`/provider/pois/${id}`, payload)).data,
   createExperience: async (payload: Record<string, unknown>) => (await api.post('/provider/experiences', payload)).data,
   updateExperience: async (id: string, payload: Record<string, unknown>) => (await api.patch(`/provider/experiences/${id}`, payload)).data,
   hideExperience: async (id: string) => (await api.delete(`/provider/experiences/${id}`)).data,
   createSlot: async (id: string, payload: Record<string, unknown>) => (await api.post(`/provider/experiences/${id}/slots`, payload)).data,
   updateSlot: async (id: string, payload: Record<string, unknown>) => (await api.patch(`/provider/slots/${id}`, payload)).data,
+  submitEvidence: async (payload: Record<string, unknown>) => (await api.post('/provider/evidence', payload)).data,
   audit: async () => (await api.get('/provider/audit')).data,
+  evidence: async () => (await api.get('/provider/evidence')).data,
 }
 
 export const adminApi = {
@@ -367,6 +372,11 @@ export async function createItinerary(payload: {
         locked: false,
         availability_status: index === 1 ? 'tentative' : 'available',
         availability_known: index !== 1,
+        data_status: 'simulated' as const,
+        slot_confirmed_at: null,
+        slot_expires_at: null,
+        source_evidence: [],
+        slot_source_evidence: [],
         poi: exp.poi,
       }
     })

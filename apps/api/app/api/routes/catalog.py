@@ -14,15 +14,27 @@ router = APIRouter(prefix="/api", tags=["catalog"])
 
 @router.get("/pois", response_model=list[POIRead])
 def list_pois(db: Session = Depends(get_db)):
-    return ExperienceRepository(db).list_pois()
+    repository = ExperienceRepository(db)
+    return [read_poi(repository, item) for item in repository.list_pois()]
 
 
 @router.get("/pois/{poi_id}", response_model=POIRead)
 def get_poi(poi_id: str, db: Session = Depends(get_db)):
-    poi = ExperienceRepository(db).get_poi(poi_id)
+    repository = ExperienceRepository(db)
+    poi = repository.get_poi(poi_id)
     if not poi:
         raise HTTPException(status_code=404, detail={"code": "NOT_FOUND", "message": "POI not found"})
-    return poi
+    return read_poi(repository, poi)
+
+
+def read_poi(repository: ExperienceRepository, poi) -> POIRead:
+    base = POIRead.model_validate(poi)
+    is_real = poi.verification_status == "verified"
+    return POIRead.model_validate({
+        **base.model_dump(),
+        "data_mode": "real" if is_real else "simulated",
+        "source_evidence": repository.source_evidence("poi", poi.id, poi.data_revision) if is_real else [],
+    })
 
 
 @router.get("/experiences", response_model=list[ExperienceRead])
@@ -53,7 +65,7 @@ def list_experiences(
 
 @router.get("/experiences/{experience_id}", response_model=ExperienceRead)
 def get_experience(experience_id: str, db: Session = Depends(get_db)):
-    experience = ExperienceRepository(db).get_experience(experience_id)
+    experience = next((item for item in ExperienceService(ExperienceRepository(db)).list() if item.id == experience_id), None)
     if not experience:
         raise HTTPException(status_code=404, detail={"code": "NOT_FOUND", "message": "Experience not found"})
     return experience
@@ -101,6 +113,17 @@ def search_experiences(
 
 @router.get("/experiences/{experience_id}/slots", response_model=list[SlotRead])
 def get_slots(experience_id: str, start_at: datetime | None = None, end_at: datetime | None = None, db: Session = Depends(get_db)):
-    if not ExperienceRepository(db).get_experience(experience_id):
+    repository = ExperienceRepository(db)
+    experience = repository.get_experience(experience_id)
+    if not experience:
         raise HTTPException(status_code=404, detail={"code": "NOT_FOUND", "message": "Experience not found"})
-    return ExperienceRepository(db).list_slots(experience_id, start_at, end_at)
+    is_real = experience.verification_status == "verified"
+    result = []
+    for slot in repository.list_slots(experience_id, start_at, end_at):
+        base = SlotRead.model_validate(slot)
+        result.append(SlotRead.model_validate({
+            **base.model_dump(),
+            "data_mode": "real" if is_real else "simulated",
+            "source_evidence": repository.source_evidence("slot", slot.id, slot.version) if is_real else [],
+        }))
+    return result

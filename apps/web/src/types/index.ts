@@ -1,4 +1,4 @@
-export type DataMode = 'real' | 'simulated' | 'replay'
+export type DataMode = 'real' | 'simulated' | 'replay' | 'mixed'
 
 export interface ChatConstraints {
   group_size: number | null
@@ -41,8 +41,23 @@ export interface POI {
   category: string
   address: string
   verification_status: string
+  source_evidence?: SourceEvidence[]
   district?: string | null
   data_mode?: DataMode
+  data_status?: 'verified' | 'stale' | 'simulated' | 'unverified'
+}
+
+export interface SourceEvidence {
+  id: string
+  source_uri: string
+  source_type: string
+  source_label?: string | null
+  license?: string | null
+  fields_covered: string[]
+  observed_at?: string | null
+  expires_at?: string | null
+  verification_status: string
+  target_type?: string | null
 }
 
 export interface Slot {
@@ -53,6 +68,9 @@ export interface Slot {
   available_reported: number | null
   status: string
   version: number
+  confirmed_at?: string | null
+  expires_at?: string | null
+  source_evidence?: SourceEvidence[]
   data_mode?: DataMode
 }
 
@@ -70,6 +88,7 @@ export interface Experience {
   verification_status: string
   poi: POI
   slots: Slot[]
+  source_evidence?: SourceEvidence[]
   data_mode?: DataMode
 }
 
@@ -99,6 +118,11 @@ export interface ItineraryStop {
   locked: boolean
   availability_status: string
   availability_known: boolean
+  data_status: 'verified' | 'stale' | 'simulated' | 'unverified'
+  slot_confirmed_at?: string | null
+  slot_expires_at?: string | null
+  source_evidence: SourceEvidence[]
+  slot_source_evidence: SourceEvidence[]
   poi: POI
 }
 

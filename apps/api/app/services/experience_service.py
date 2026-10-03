@@ -3,7 +3,7 @@ from math import asin, cos, radians, sin, sqrt
 
 from app.core.enums import SlotStatus
 from app.repositories.experience_repository import ExperienceRepository
-from app.schemas.common import ExperienceRead, SlotRead
+from app.schemas.common import ExperienceRead, POIRead, SlotRead
 
 
 class ExperienceService:
@@ -49,6 +49,9 @@ class ExperienceService:
             slots = [slot for slot in item.slots if slot.status not in {
                 SlotStatus.FULL.value, SlotStatus.UNAVAILABLE.value, SlotStatus.CANCELLED.value,
             } and slot.available_reported != 0]
+            if item.verification_status == "verified":
+                slots = [slot for slot in slots if slot.status in {SlotStatus.OPEN.value, SlotStatus.AVAILABLE.value}
+                         and self.repository.is_fresh_slot(slot)]
             if start_at:
                 slots = [slot for slot in slots if slot.start_at.replace(tzinfo=slot.start_at.tzinfo or start_at.tzinfo) >= start_at]
             if end_at:
@@ -59,6 +62,26 @@ class ExperienceService:
                 slots = [slot for slot in slots if slot.id == slot_id]
             if (start_at or end_at) and not slots:
                 continue
-            experience = ExperienceRead.model_validate(item)
-            result.append(experience.model_copy(update={"slots": [SlotRead.model_validate(slot) for slot in slots]}))
+            is_real = item.verification_status == "verified"
+            poi = POIRead.model_validate(item.poi)
+            poi = POIRead.model_validate({
+                **poi.model_dump(),
+                "data_mode": "real" if is_real else "simulated",
+                "source_evidence": self.repository.source_evidence("poi", item.poi.id, item.poi.data_revision) if is_real else [],
+            })
+            experience = ExperienceRead.model_validate({
+                **ExperienceRead.model_validate(item).model_dump(),
+                "poi": poi.model_dump(),
+                "data_mode": "real" if is_real else "simulated",
+                "source_evidence": self.repository.source_evidence("experience", item.id, item.data_revision) if is_real else [],
+            })
+            slot_reads = []
+            for slot in slots:
+                slot_read = SlotRead.model_validate(slot)
+                slot_reads.append(SlotRead.model_validate({
+                    **slot_read.model_dump(),
+                    "data_mode": "real" if is_real else "simulated",
+                    "source_evidence": self.repository.source_evidence("slot", slot.id, slot.version) if is_real else [],
+                }))
+            result.append(experience.model_copy(update={"slots": slot_reads}))
         return result

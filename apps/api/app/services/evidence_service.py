@@ -8,7 +8,7 @@ from app.models.entities import Evidence, Experience, ExperienceSlot, POI
 
 REQUIRED_FIELDS = {
     "poi": {"name", "address", "latitude", "longitude", "category"},
-    "experience": {"title", "description", "intent_tags", "is_hands_on", "duration_min", "price_vnd", "price_basis"},
+    "experience": {"title", "description", "primary_intent", "intent_tags", "is_hands_on", "duration_min", "price_vnd", "price_basis"},
     "slot": {"start_at", "end_at", "capacity_total", "available_reported", "status"},
 }
 TARGET_MODELS = {"poi": POI, "experience": Experience, "slot": ExperienceSlot}
@@ -69,6 +69,20 @@ def entity_is_operationally_verified(db: Session, target_type: str, target) -> b
     return REQUIRED_FIELDS[target_type].issubset(covered_fields(evidence))
 
 
+def slot_is_operationally_verified(db: Session, slot: ExperienceSlot) -> bool:
+    evidence = current_verified_evidence(db, "slot", slot.id, slot.version)
+    if not REQUIRED_FIELDS["slot"].issubset(covered_fields(evidence)) or not slot.expires_at or not slot.confirmed_at:
+        return False
+    expires_at = slot.expires_at
+    confirmed_at = slot.confirmed_at
+    if expires_at.tzinfo is None:
+        expires_at = expires_at.replace(tzinfo=timezone.utc)
+    if confirmed_at.tzinfo is None:
+        confirmed_at = confirmed_at.replace(tzinfo=timezone.utc)
+    now = utc_now()
+    return confirmed_at <= now and expires_at > now
+
+
 def evidence_summary(evidence: Evidence) -> dict:
     return {
         "id": evidence.id,
@@ -80,4 +94,5 @@ def evidence_summary(evidence: Evidence) -> dict:
         "observed_at": evidence.observed_at,
         "expires_at": evidence.expires_at,
         "verification_status": evidence.verification_status,
+        "target_type": evidence.target_type,
     }

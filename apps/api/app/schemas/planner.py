@@ -3,7 +3,7 @@ from typing import Literal
 
 from pydantic import BaseModel, Field, field_validator, model_validator
 
-from app.schemas.common import POIRead
+from app.schemas.common import POIRead, SourceEvidenceRead
 
 
 class PlanRequest(BaseModel):
@@ -64,9 +64,14 @@ class ItineraryStopRead(BaseModel):
     locked: bool
     availability_status: str
     availability_known: bool
+    data_status: Literal["verified", "stale", "simulated", "unverified"] = "simulated"
+    slot_confirmed_at: datetime | None = None
+    slot_expires_at: datetime | None = None
+    source_evidence: list[SourceEvidenceRead] = Field(default_factory=list)
+    slot_source_evidence: list[SourceEvidenceRead] = Field(default_factory=list)
     poi: POIRead
 
-    @field_validator("arrival_at", "start_at", "end_at", mode="before")
+    @field_validator("arrival_at", "start_at", "end_at", "slot_confirmed_at", "slot_expires_at", mode="before")
     @classmethod
     def require_aware_output(cls, value):
         if isinstance(value, datetime) and (value.tzinfo is None or value.utcoffset() is None):

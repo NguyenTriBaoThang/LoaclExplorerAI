@@ -2,9 +2,9 @@
 
 ## Thành phần
 
-- **Web**: React + TypeScript + Vite; trang Explore, Planner, itinerary, provider prototype và About. Axios gom tại `src/api`, Leaflet chỉ nằm sau `MapAdapter`.
+- **Web**: React + TypeScript + Vite; trang Explore, Planner, itinerary, provider portal, admin và About. Axios gom tại `src/api`, Leaflet chỉ nằm sau `MapAdapter`.
 - **API**: FastAPI route nhận/kiểm tra request rồi ủy quyền cho service. Pydantic giữ contract và định dạng lỗi có request ID.
-- **Service**: `ExperienceService`, `RecommendationService`, `PlannerService`, `ExplanationService`; Planner điều phối repository, routing và engine.
+- **Service**: `ExperienceService`, `RecommendationService`, `PlannerService`, `ExplanationService`, `evidence_service`; Planner điều phối repository, kiểm tra nguồn/hạn, routing và engine.
 - **Planner engine**: `PlannerEngine` là interface; `HeuristicPlanner` lựa slot khả thi sớm nhất rồi ưu tiên intent khi cùng giờ. Có thể thêm engine OR-Tools mà không đổi route contract.
 - **Repository**: truy vấn SQLAlchemy cho catalog và slot, tách chi tiết persistence khỏi route.
 - **Database**: PostgreSQL + PostGIS; tọa độ latitude/longitude phục vụ response và `pois.geom geography(POINT,4326)`/GIST phục vụ truy vấn không gian tương lai.
@@ -36,8 +36,8 @@ flowchart TD
 3. Tính giá theo `price_basis`, loại trải nghiệm vượt ngân sách còn lại.
 4. Tính route estimate từ điểm trước đó, chỉ nhận slot bắt đầu sau thời gian đến dự kiến.
 5. Engine chọn slot khả thi; lý do, mục đích được giữ/mất, tính bất định và routing mock được đưa vào response.
-6. Persist itinerary, stops và DecisionLog. Slot capacity chưa biết không bị coi là 0; itinerary chuyển `tentative`.
+6. Với catalog thật, Planner chỉ dùng POI/experience đủ bằng chứng đang duyệt và slot có xác nhận chưa hết hạn. Persist itinerary, stops và DecisionLog. Slot capacity chưa biết không bị coi là 0; itinerary chuyển `tentative`.
 
 ## Ranh giới tin cậy
 
-Mọi POI, hoạt động, giá và khung giờ do seed script tạo đều mô phỏng. Provider prototype chỉ đọc. Không có booking, authentication, xác nhận chỗ, giao thông, hay LLM production. Không hiển thị dữ liệu mô phỏng thành giao dịch thực.
+POI/experience/slot do seed và 10 POI fallback phía web tạo đều là dữ liệu mô phỏng; UI gắn nhãn mô phỏng và không cho admin duyệt thành dữ liệu thật khi thiếu chứng cứ. Provider đã có luồng gửi POI/experience và nguồn chờ admin rà soát; slot là báo cáo số chỗ của cơ sở có thời điểm xác nhận và hạn dùng, không phải booking. Routing vẫn là mock, chưa có điều phối giao thông thực hoặc thanh toán. Quy mô pilot ghi trong draft (20–30 POI, 10–15 experiences, 30–50 slots, tiếp cận 3–5 cơ sở) chưa được nhóm xác nhận và không bị hard-code; chi tiết tại [sourced catalog workflow](sourced-catalog.md).

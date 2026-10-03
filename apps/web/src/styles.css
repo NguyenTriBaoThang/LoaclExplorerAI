@@ -937,6 +937,22 @@ a {
   border: 1px solid rgba(244, 63, 94, 0.28);
 }
 
+.source-evidence-link {
+  display: inline-block;
+  margin-top: 8px;
+  color: var(--tx-emerald);
+  font-size: 12px;
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+
+.slot-freshness-note {
+  display: block;
+  margin-top: 6px;
+  color: var(--text-muted);
+  font-size: 10px;
+}
+
 .eyebrow-3d {
   font-size: 11px;
   letter-spacing: 0.18em;
@@ -3593,6 +3609,46 @@ a {
 .status-pill-tentative {
   background: rgba(245, 158, 11, 0.15);
   color: var(--tx-amber);
+}
+
+.stop-provenance {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 5px;
+  margin-top: 10px;
+  color: var(--text-muted);
+  font-size: 11px;
+  overflow-wrap: anywhere;
+}
+
+.provenance-state {
+  font-weight: 700;
+}
+
+.provenance-verified {
+  color: var(--tx-emerald);
+}
+
+.provenance-stale,
+.provenance-unverified {
+  color: var(--tx-amber);
+}
+
+.provenance-simulated {
+  color: var(--text-muted);
+}
+
+.stop-source-group {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 8px;
+}
+
+.stop-source-group a {
+  color: var(--tx-mint);
+  text-decoration: underline;
+  text-underline-offset: 2px;
 }
 
 .travel-leg-indicator {

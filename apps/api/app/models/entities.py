@@ -117,6 +117,7 @@ class POI(Base):
     category: Mapped[str] = mapped_column(String(40), index=True)
     address: Mapped[str] = mapped_column(String(300), default="")
     source_attribution: Mapped[str | None] = mapped_column(Text, nullable=True)
+    submitted_by_provider_id: Mapped[str | None] = mapped_column(ForeignKey("providers.id", ondelete="SET NULL"), nullable=True, index=True)
     is_in_pilot_polygon: Mapped[bool] = mapped_column(Boolean, default=False)
     image_urls: Mapped[list[str]] = mapped_column(JSON_DOCUMENT, default=list)
     verification_status: Mapped[str] = mapped_column(String(24), default=VerificationStatus.SIMULATED.value)

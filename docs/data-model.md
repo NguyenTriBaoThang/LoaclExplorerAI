@@ -12,6 +12,9 @@ erDiagram
     EXPERIENCES ||--o{ EXPERIENCE_SLOTS : schedules
     EXPERIENCES ||--o{ INTENT_SIMILARITIES : similarity_a
     EXPERIENCES ||--o{ INTENT_SIMILARITIES : similarity_b
+    EVIDENCE }o--o| POIS : "target_type=poi"
+    EVIDENCE }o--o| EXPERIENCES : "target_type=experience"
+    EVIDENCE }o--o| EXPERIENCE_SLOTS : "target_type=slot"
     ITINERARIES ||--o{ ITINERARY_STOPS : contains
     ITINERARIES ||--o{ ITINERARY_VERSIONS : snapshots
     ITINERARIES ||--o{ DECISION_LOGS : explains
@@ -41,6 +44,8 @@ erDiagram
       geometry geom
       varchar category
       text source_attribution
+      int data_revision
+      uuid submitted_by_provider_id FK
       boolean is_in_pilot_polygon
       jsonb image_urls
     }
@@ -56,6 +61,7 @@ erDiagram
       integer duration_min
       bigint price_vnd
       varchar verification_status
+      int data_revision
     }
     EXPERIENCE_SLOTS {
       uuid id PK
@@ -66,6 +72,7 @@ erDiagram
       integer available_reported
       varchar status
       integer version
+      timestamptz confirmed_at
       timestamptz expires_at
     }
     INTENT_SIMILARITIES {
@@ -146,7 +153,13 @@ erDiagram
       uuid id PK
       varchar source_uri
       varchar source_type
+      varchar source_label
       varchar license
+      varchar target_type
+      varchar target_id
+      int target_revision
+      jsonb fields_covered
+      timestamptz observed_at
       timestamptz verified_at
       timestamptz expires_at
     }
@@ -170,6 +183,14 @@ backfills existing rows, upgrades VND columns to `bigint`, converts tag/reason
 lists to PostgreSQL arrays, and converts POI geography to geometry. Migration
 `0001_initial` is kept as a frozen baseline so future ORM changes cannot alter
 the historical migration.
+
+Migration `0005_sourced_catalog_evidence` attaches evidence to a POI, experience,
+or slot with a typed target ID, target revision, field coverage, observation
+time, source, and expiry. This is a deliberate polymorphic reference; the
+service validates the target and provider ownership. Editing a POI or
+experience increments its revision and makes evidence for the older version
+ineligible. Migration `0006_provider_poi_ownership` adds the owner pointer for
+provider-submitted POIs. See [sourced catalog workflow](sourced-catalog.md).
 
 The PRD lists 32 HCMC POI names grouped into eight areas, but does not provide
 their coordinates, addresses, source attribution, provider links, activities,

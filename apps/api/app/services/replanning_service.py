@@ -24,6 +24,7 @@ from app.models.entities import (
 from app.prompts.registry import catalog
 from app.schemas.ai import ReplanProposal, ReplanProposals, XAIExplanation
 from app.services.availability_service import AvailabilityService
+from app.services.evidence_service import entity_is_operationally_verified, slot_is_operationally_verified
 from app.services.ml_ranker_service import MLRankerUnavailable, ranker_service
 from app.services.prompt_service import InvalidStructuredOutput, PromptRunner
 from app.services.routing_service import RoutingService
@@ -141,6 +142,12 @@ class ReplanningService:
                    POI.verification_status.in_(["verified", "simulated"]))
             .options(selectinload(Experience.slots), joinedload(Experience.poi))
         ).all()
+        experiences = [experience for experience in experiences if (
+            experience.verification_status == "simulated" and experience.poi.verification_status == "simulated"
+        ) or (
+            entity_is_operationally_verified(self.db, "experience", experience)
+            and entity_is_operationally_verified(self.db, "poi", experience.poi)
+        )]
         candidates: list[ReplanCandidate] = []
         old_travel = 0
         if previous:
@@ -196,6 +203,8 @@ class ReplanningService:
                 if not self.availability.can_fit(slot, itinerary.group_size):
                     continue
                 if slot.expires_at and aware(slot.expires_at) <= now:
+                    continue
+                if experience.verification_status == "verified" and not slot_is_operationally_verified(self.db, slot):
                     continue
                 slot_start, slot_end = aware(slot.start_at), aware(slot.end_at)
                 travel_before = 0

@@ -16,7 +16,7 @@ from app.adapters.llm.provider import StructuredOutputProvider
 from app.api.dependencies import get_llm_provider, get_db, get_optional_user, require_admin
 from app.core.config import settings
 from app.core.enums import normalize_intent_tag
-from app.models.entities import Event, Experience, ExperienceSlot, Feedback, IntentSimilarity, Itinerary, ItineraryStop, Provider, User
+from app.models.entities import Event, Evidence, Experience, ExperienceSlot, Feedback, IntentSimilarity, Itinerary, ItineraryStop, Provider, User
 from app.prompts.registry import catalog
 from app.schemas.ai import (
     ExperienceMetadata,
@@ -35,6 +35,7 @@ from app.schemas.ai import (
 )
 from app.services.prompt_service import InvalidStructuredOutput, PromptRunner
 from app.services.replanning_service import ReplanningService, aware
+from app.services.evidence_service import REQUIRED_FIELDS, utc_now
 
 
 router = APIRouter(tags=["AI workflows"])
@@ -329,6 +330,14 @@ def confirm_provider_slot_action(
         if slot.version != claims.get("versions", {}).get(slot.id):
             raise HTTPException(status_code=409, detail={"code": "SLOT_VERSION_CHANGED", "message": "Availability changed after preview; preview the action again."})
     action = claims.get("action")
+    confirmed_at = utc_now()
+    confirmation_expiry = payload.expires_at
+    if action == "UPDATE_CAPACITY" and claims.get("new_status") == "open":
+        if confirmation_expiry is None or confirmation_expiry.tzinfo is None or confirmation_expiry.utcoffset() is None:
+            raise HTTPException(status_code=422, detail={"code": "FRESH_SLOT_CONFIRMATION_REQUIRED", "message": "Opening a slot requires a timezone-aware expires_at."})
+        confirmation_expiry = confirmation_expiry.astimezone(timezone.utc)
+        if confirmation_expiry <= confirmed_at or any(confirmation_expiry > aware(slot.start_at) for slot in slots):
+            raise HTTPException(status_code=422, detail={"code": "INVALID_SLOT_EXPIRY", "message": "Expiry must be in the future and no later than each selected slot's start."})
     for slot in slots:
         if action in {"CANCEL_SLOT", "PAUSE_DAY"}:
             slot.status = "cancelled"
@@ -343,9 +352,21 @@ def confirm_provider_slot_action(
             slot.status = claims["new_status"]
         else:
             raise HTTPException(status_code=400, detail={"code": "INVALID_ACTION_TOKEN", "message": "Unknown provider action."})
-        slot.confirmed_at = datetime.now(timezone.utc)
-        slot.expires_at = None
+        slot.confirmed_at = confirmed_at
+        if slot.status == "open":
+            slot.expires_at = confirmation_expiry
         slot.version += 1
+        if slot.status == "open" and slot.expires_at:
+            db.add(Evidence(
+                id=str(uuid4()), source_uri=f"provider://{owner.id}/slots/{slot.id}",
+                source_type="provider_confirmation", source_label=owner.name,
+                notes="Authenticated provider confirmation via the two-step slot assistant.",
+                submitted_by=user.id if user else None,
+                target_type="slot", target_id=slot.id, target_revision=slot.version,
+                fields_covered=sorted(REQUIRED_FIELDS["slot"]), observed_at=confirmed_at,
+                expires_at=slot.expires_at, verification_status="verified",
+                verified_by=user.id if user else owner.id, verified_at=confirmed_at,
+            ))
     db.commit()
     return {"status": "confirmed", "provider_id": owner.id, "updated_slot_ids": [slot.id for slot in slots],
             "action": action, "prompt_version": claims.get("prompt_version"),

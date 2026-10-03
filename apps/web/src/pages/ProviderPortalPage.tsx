@@ -18,6 +18,8 @@ type SlotItem = {
   end_at: string
   capacity_total: number
   available_reported: number | null
+  confirmed_at: string | null
+  expires_at: string | null
   status: string
   version: number
 }
@@ -27,6 +29,7 @@ type ExperienceItem = {
   poi_id: string
   title: string
   description: string
+  primary_intent: string
   intent_tags: string[]
   is_hands_on: boolean
   is_indoor: boolean
@@ -40,10 +43,23 @@ type ExperienceItem = {
 
 type Draft = Omit<ExperienceItem, 'id' | 'verification_status' | 'poi_name' | 'slots'>
 
+function localDateTimeInput(offsetMs: number) {
+  const date = new Date(Date.now() + offsetMs)
+  date.setMinutes(date.getMinutes() - date.getTimezoneOffset())
+  return date.toISOString().slice(0, 16)
+}
+
+function slotConfirmationExpiry(slot: SlotItem) {
+  const validForFourHours = Date.now() + 4 * 60 * 60 * 1000
+  const beforeSlotStart = new Date(slot.start_at).getTime() - 60_000
+  return new Date(Math.min(validForFourHours, beforeSlotStart)).toISOString()
+}
+
 const blank: Draft = {
   poi_id: '',
   title: '',
   description: '',
+  primary_intent: 'thủ_công',
   intent_tags: [],
   is_hands_on: false,
   is_indoor: true,
@@ -55,6 +71,12 @@ const blank: Draft = {
 export function ProviderPortalPage() {
   const [items, setItems] = useState<ExperienceItem[]>([])
   const [pois, setPois] = useState<POI[]>([])
+  const [providerPois, setProviderPois] = useState<Array<POI & { data_revision: number }>>([])
+  const [evidenceItems, setEvidenceItems] = useState<Array<{
+    id: string; target_type: string; target_id: string; source_uri: string; source_type: string;
+    source_label: string | null; fields_covered: string[]; observed_at: string | null;
+    expires_at: string | null; verification_status: string; reviewed_at: string | null;
+  }>>([])
   const [audit, setAudit] = useState<
     Array<{
       id: string
@@ -75,24 +97,48 @@ export function ProviderPortalPage() {
   const [slotDuration, setSlotDuration] = useState(60)
   const [capacity, setCapacity] = useState(10)
   const [available, setAvailable] = useState(10)
+  const [slotExpiresAt, setSlotExpiresAt] = useState(localDateTimeInput(4 * 60 * 60 * 1000))
+  const [sourceUrl, setSourceUrl] = useState('')
+  const [sourceType, setSourceType] = useState('official_website')
+  const [sourceObservedAt, setSourceObservedAt] = useState(localDateTimeInput(0))
+  const [sourceExpiresAt, setSourceExpiresAt] = useState(localDateTimeInput(30 * 24 * 60 * 60 * 1000))
+  const [sourceLicense, setSourceLicense] = useState('')
+  const [sourceLabel, setSourceLabel] = useState('')
+  const [sourceConfirmsPoi, setSourceConfirmsPoi] = useState(false)
   const [notice, setNotice] = useState('')
   const [error, setError] = useState('')
   const [showExpForm, setShowExpForm] = useState(false)
+  const [showPoiForm, setShowPoiForm] = useState(false)
+  const [editingPoi, setEditingPoi] = useState('')
+  const [poiDraft, setPoiDraft] = useState({
+    name: '', description: '', district: '', latitude: '', longitude: '', category: '', address: '',
+  })
+  const poiOptions = Array.from([
+    ...pois,
+    ...providerPois.map((point) => ({
+      ...point,
+      data_mode: point.verification_status === 'verified' ? 'real' as const : 'simulated' as const,
+    })),
+  ].reduce((options, point) => options.set(point.id, point), new Map<string, POI>()).values())
 
   async function load() {
     try {
-      const [experiences, points, history] = await Promise.all([
+      const [experiences, points, history, ownedPoints, sources] = await Promise.all([
         providerApi.experiences(),
         getPOIs(),
         providerApi.audit(),
+        providerApi.pois(),
+        providerApi.evidence(),
       ])
       setItems(experiences)
       setPois(points)
       setAudit(history)
+      setProviderPois(ownedPoints)
+      setEvidenceItems(sources)
       setError('')
-      setDraft((current) =>
-        current.poi_id || !points[0] ? current : { ...current, poi_id: points[0].id }
-      )
+      const verifiedPointId = points.find((point) => point.data_mode === 'real')?.id
+        || ownedPoints.find((point) => point.verification_status === 'verified')?.id
+      setDraft((current) => current.poi_id || !verifiedPointId ? current : { ...current, poi_id: verifiedPointId })
     } catch {
       setError('Không tải được dữ liệu cơ sở. Hãy đăng nhập bằng tài khoản có quyền cơ sở.')
     }
@@ -109,6 +155,7 @@ export function ProviderPortalPage() {
       poi_id: item.poi_id,
       title: item.title,
       description: item.description,
+      primary_intent: item.primary_intent || 'thủ_công',
       intent_tags: item.intent_tags || [],
       is_hands_on: item.is_hands_on,
       is_indoor: item.is_indoor,
@@ -125,14 +172,48 @@ export function ProviderPortalPage() {
     setError('')
     setNotice('')
     try {
+      if (!sourceUrl.trim()) {
+        setError('Cần nhập URL nguồn để gửi dữ liệu trải nghiệm cho quản trị viên xác minh.')
+        return
+      }
+      let experienceId = editing
       if (editing) {
         await providerApi.updateExperience(editing, draft as unknown as Record<string, unknown>)
       } else {
-        await providerApi.createExperience(draft as unknown as Record<string, unknown>)
+        const created = (await providerApi.createExperience(draft as unknown as Record<string, unknown>)) as { id: string }
+        experienceId = created.id
       }
-      setDraft({ ...blank, poi_id: pois[0]?.id || '' })
+      const evidenceBase = {
+        source_uri: sourceUrl.trim(),
+        source_type: sourceType,
+        source_label: sourceLabel || null,
+        license: sourceLicense || null,
+        observed_at: new Date(sourceObservedAt).toISOString(),
+        expires_at: new Date(sourceExpiresAt).toISOString(),
+      }
+      await providerApi.submitEvidence({
+        ...evidenceBase,
+        target_type: 'experience',
+        target_id: experienceId,
+        fields_covered: ['title', 'description', 'primary_intent', 'intent_tags', 'is_hands_on', 'duration_min', 'price_vnd', 'price_basis'],
+        notes: 'Cơ sở khai báo nguồn chứng minh các trường trải nghiệm đã chọn.',
+      })
+      if (sourceConfirmsPoi && draft.poi_id) {
+        await providerApi.submitEvidence({
+          ...evidenceBase,
+          target_type: 'poi',
+          target_id: draft.poi_id,
+          fields_covered: ['name', 'address', 'latitude', 'longitude', 'category'],
+          notes: 'Cơ sở xác nhận nguồn này cũng chứng minh địa chỉ, tọa độ và loại POI.',
+        })
+      }
+      setDraft({ ...blank, poi_id: poiOptions.find((point) => point.data_mode === 'real')?.id || '' })
       setEditing('')
       setShowExpForm(false)
+      setSourceUrl('')
+      setSourceObservedAt(localDateTimeInput(0))
+      setSourceExpiresAt(localDateTimeInput(30 * 24 * 60 * 60 * 1000))
+      setSourceConfirmsPoi(false)
       setNotice('Đã lưu thành công. Nội dung mới hoặc chỉnh sửa sẽ chờ quản trị viên duyệt.')
       await load()
     } catch {
@@ -151,8 +232,9 @@ export function ProviderPortalPage() {
         end_at: new Date(start.getTime() + slotDuration * 60000).toISOString(),
         capacity_total: capacity,
         available_reported: available,
+        expires_at: new Date(slotExpiresAt).toISOString(),
       })
-      setNotice('Đã thêm khung giờ mới thành công!')
+      setNotice('Đã thêm ca kèm thời điểm xác nhận và hạn xác nhận. Ca hết hạn sẽ không còn được coi là chỗ trống đã xác nhận.')
       setSlotTarget('')
       await load()
     } catch {
@@ -180,6 +262,7 @@ export function ProviderPortalPage() {
         expected_version: slot.version,
         status,
         available_reported: reported,
+        ...(status === 'open' ? { expires_at: slotConfirmationExpiry(slot) } : {}),
       })) as { affected_itineraries?: number }
       setNotice(
         status === 'cancelled'
@@ -205,6 +288,7 @@ export function ProviderPortalPage() {
         status: reported === 0 ? 'full' : 'open',
         capacity_total: total,
         available_reported: reported,
+        expires_at: slotConfirmationExpiry(slot),
       })
       setNotice('Đã cập nhật sức chứa ca.')
       await load()
@@ -225,6 +309,50 @@ export function ProviderPortalPage() {
     }
   }
 
+  async function savePoi(event: FormEvent) {
+    event.preventDefault()
+    setError('')
+    setNotice('')
+    try {
+      if (!sourceUrl.trim()) {
+        setError('Cần nhập URL nguồn có thể xác minh cho địa chỉ và loại POI.')
+        return
+      }
+      const payload = {
+        ...poiDraft,
+        latitude: Number(poiDraft.latitude),
+        longitude: Number(poiDraft.longitude),
+      }
+      const created = editingPoi
+        ? ((await providerApi.updatePOI(editingPoi, payload)) as { id: string })
+        : ((await providerApi.createPOI(payload)) as { id: string })
+      const targetPoiId = editingPoi || created.id
+      await providerApi.submitEvidence({
+        target_type: 'poi',
+        target_id: targetPoiId,
+        source_uri: sourceUrl.trim(),
+        source_type: sourceType,
+        source_label: sourceLabel || null,
+        license: sourceLicense || null,
+        fields_covered: ['name', 'address', 'latitude', 'longitude', 'category'],
+        observed_at: new Date(sourceObservedAt).toISOString(),
+        expires_at: new Date(sourceExpiresAt).toISOString(),
+        notes: 'Cơ sở khai báo nguồn cho địa chỉ, tọa độ và loại POI.',
+      })
+      setPoiDraft({ name: '', description: '', district: '', latitude: '', longitude: '', category: '', address: '' })
+      setDraft((current) => ({ ...current, poi_id: targetPoiId }))
+      setEditingPoi('')
+      setSourceUrl('')
+      setSourceObservedAt(localDateTimeInput(0))
+      setSourceExpiresAt(localDateTimeInput(30 * 24 * 60 * 60 * 1000))
+      setShowPoiForm(false)
+      setNotice('Đã gửi POI và nguồn bằng chứng vào hàng chờ quản trị viên xác minh.')
+      await load()
+    } catch {
+      setError('Không thể lưu POI hoặc bằng chứng. Kiểm tra tọa độ, URL nguồn và hạn dùng.')
+    }
+  }
+
   return (
     <div className="portal-page-3d page-wrap">
       {/* Header */}
@@ -241,18 +369,35 @@ export function ProviderPortalPage() {
           </p>
         </div>
 
-        <button
-          type="button"
-          className="btn-primary-3d"
-          onClick={() => {
-            setEditing('')
-            setDraft({ ...blank, poi_id: pois[0]?.id || '' })
-            setShowExpForm(!showExpForm)
-          }}
-        >
-          {showExpForm ? <X size={16} /> : <Plus size={16} />}
-          <span>{showExpForm ? 'Đóng form' : 'Thêm trải nghiệm mới'}</span>
-        </button>
+        <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
+          <button
+            type="button"
+            className="btn-secondary-3d"
+            onClick={() => {
+              setShowExpForm(false)
+              setEditingPoi('')
+              setShowPoiForm(!showPoiForm)
+              setSourceUrl('')
+            }}
+          >
+            {showPoiForm ? <X size={16} /> : <Plus size={16} />}
+            <span>{showPoiForm ? 'Đóng POI' : 'Thêm POI thật'}</span>
+          </button>
+          <button
+            type="button"
+            className="btn-primary-3d"
+            onClick={() => {
+              setEditing('')
+              setDraft({ ...blank, poi_id: poiOptions.find((point) => point.data_mode === 'real')?.id || '' })
+              setShowPoiForm(false)
+              setShowExpForm(!showExpForm)
+              setSourceUrl('')
+            }}
+          >
+            {showExpForm ? <X size={16} /> : <Plus size={16} />}
+            <span>{showExpForm ? 'Đóng form' : 'Thêm trải nghiệm mới'}</span>
+          </button>
+        </div>
       </div>
 
       {notice && (
@@ -268,6 +413,96 @@ export function ProviderPortalPage() {
           <span>{error}</span>
         </div>
       )}
+
+      {showPoiForm && (
+        <section className="form-card-3d mb-8 animate-fadeIn">
+          <div className="form-card-header">
+            <span className="step-num">POI</span>
+            <div>
+              <h2>{editingPoi ? 'Cập nhật POI thực' : 'Đăng ký địa điểm thực'}</h2>
+              <p>POI mới ở trạng thái chờ duyệt; cần nguồn bao phủ địa chỉ, tọa độ và loại địa điểm.</p>
+            </div>
+          </div>
+          <form onSubmit={savePoi} className="form-fields-grid-2">
+            <label className="field-group-3d"><span>Tên địa điểm</span><input required minLength={2} value={poiDraft.name} onChange={(e) => setPoiDraft({ ...poiDraft, name: e.target.value })} /></label>
+            <label className="field-group-3d"><span>Loại hoạt động / danh mục</span><input required value={poiDraft.category} onChange={(e) => setPoiDraft({ ...poiDraft, category: e.target.value })} placeholder="handicraft, food, culture..." /></label>
+            <label className="field-group-3d" style={{ gridColumn: '1 / -1' }}><span>Địa chỉ đã xác minh tại thực địa</span><input required minLength={5} value={poiDraft.address} onChange={(e) => setPoiDraft({ ...poiDraft, address: e.target.value })} /></label>
+            <label className="field-group-3d"><span>Vĩ độ</span><input type="number" required step="any" min={-90} max={90} value={poiDraft.latitude} onChange={(e) => setPoiDraft({ ...poiDraft, latitude: e.target.value })} /></label>
+            <label className="field-group-3d"><span>Kinh độ</span><input type="number" required step="any" min={-180} max={180} value={poiDraft.longitude} onChange={(e) => setPoiDraft({ ...poiDraft, longitude: e.target.value })} /></label>
+            <label className="field-group-3d"><span>Quận / khu vực</span><input value={poiDraft.district} onChange={(e) => setPoiDraft({ ...poiDraft, district: e.target.value })} /></label>
+            <label className="field-group-3d"><span>Mô tả</span><input value={poiDraft.description} onChange={(e) => setPoiDraft({ ...poiDraft, description: e.target.value })} /></label>
+            <label className="field-group-3d" style={{ gridColumn: '1 / -1' }}><span>URL nguồn địa chỉ / thông tin chính thức</span><input type="url" required value={sourceUrl} onChange={(e) => setSourceUrl(e.target.value)} placeholder="https://..." /></label>
+            <label className="field-group-3d"><span>Loại nguồn</span><select value={sourceType} onChange={(e) => setSourceType(e.target.value)}><option value="official_website">Website chính thức</option><option value="provider_confirmation">Xác nhận trực tiếp của cơ sở</option><option value="field_visit">Khảo sát thực địa</option><option value="document">Tài liệu</option><option value="government_dataset">Dữ liệu cơ quan nhà nước</option><option value="other">Khác</option></select></label>
+            <label className="field-group-3d"><span>Thời điểm kiểm tra</span><input type="datetime-local" required value={sourceObservedAt} onChange={(e) => setSourceObservedAt(e.target.value)} /></label>
+            <label className="field-group-3d"><span>Hạn dùng bằng chứng</span><input type="datetime-local" required value={sourceExpiresAt} onChange={(e) => setSourceExpiresAt(e.target.value)} /></label>
+            <label className="field-group-3d"><span>Tên nguồn</span><input value={sourceLabel} onChange={(e) => setSourceLabel(e.target.value)} /></label>
+            <label className="field-group-3d"><span>Giấy phép / điều khoản nguồn</span><input value={sourceLicense} onChange={(e) => setSourceLicense(e.target.value)} /></label>
+            <div className="form-action-row" style={{ gridColumn: '1 / -1' }}>
+              <button className="btn-primary-3d" type="submit"><span>{editingPoi ? 'Lưu POI và gửi bằng chứng mới' : 'Gửi POI và bằng chứng'}</span></button>
+            </div>
+          </form>
+        </section>
+      )}
+
+      <section className="portal-experiences-section">
+        <h2 className="section-title-3d">POI do cơ sở quản lý ({providerPois.length})</h2>
+        <div className="portal-exp-list">
+          {providerPois.map((poi) => (
+            <article key={poi.id} className="portal-exp-card">
+              <div className="portal-exp-top">
+                <div className="portal-exp-meta-left">
+                  <span className="portal-status-badge">{poi.verification_status}</span>
+                  <h3>{poi.name}</h3>
+                  <p className="portal-exp-poi">{poi.address} · {poi.latitude.toFixed(5)}, {poi.longitude.toFixed(5)} · {poi.category}</p>
+                </div>
+                <button
+                  type="button"
+                  className="btn-secondary-3d btn-sm"
+                  onClick={() => {
+                    setEditingPoi(poi.id)
+                    setPoiDraft({
+                      name: poi.name, description: poi.description || '', district: poi.district || '',
+                      latitude: String(poi.latitude), longitude: String(poi.longitude),
+                      category: poi.category, address: poi.address,
+                    })
+                    setSourceUrl('')
+                    setShowExpForm(false)
+                    setShowPoiForm(true)
+                    window.scrollTo({ top: 0, behavior: 'smooth' })
+                  }}
+                >
+                  <Pencil size={13} /> Sửa POI
+                </button>
+              </div>
+            </article>
+          ))}
+          {providerPois.length === 0 && <p className="admin-empty-text">Chưa có POI do cơ sở quản lý.</p>}
+        </div>
+      </section>
+
+      <section className="portal-experiences-section">
+        <h2 className="section-title-3d">Nguồn và bằng chứng ({evidenceItems.length})</h2>
+        <div className="portal-exp-list">
+          {evidenceItems.map((source) => (
+            <article key={source.id} className="portal-exp-card">
+              <div className="portal-exp-top">
+                <div className="portal-exp-meta-left">
+                  <span className="portal-status-badge">{source.verification_status}</span>
+                  <h3>{source.source_label || source.source_type} · {source.target_type}</h3>
+                  <p className="portal-exp-poi">
+                    {source.fields_covered.join(', ')} · quan sát: {source.observed_at ? new Date(source.observed_at).toLocaleString('vi-VN') : '—'}
+                    {' · '}hết hạn: {source.expires_at ? new Date(source.expires_at).toLocaleString('vi-VN') : '—'}
+                  </p>
+                  {source.source_uri.startsWith('http')
+                    ? <a href={source.source_uri} target="_blank" rel="noreferrer">{source.source_uri}</a>
+                    : <span>{source.source_uri} (xác nhận nội bộ)</span>}
+                </div>
+              </div>
+            </article>
+          ))}
+          {evidenceItems.length === 0 && <p className="admin-empty-text">Chưa gửi bằng chứng nguồn nào.</p>}
+        </div>
+      </section>
 
       {/* Experience Editor Form Card (Collapsible) */}
       {showExpForm && (
@@ -288,9 +523,10 @@ export function ProviderPortalPage() {
                 value={draft.poi_id}
                 onChange={(e) => setDraft({ ...draft, poi_id: e.target.value })}
               >
-                {pois.map((p) => (
-                  <option key={p.id} value={p.id}>
-                    {p.name} — {p.address}
+                <option value="" disabled>Chọn POI đã xác minh trước khi đăng trải nghiệm</option>
+                {poiOptions.map((p) => (
+                  <option key={p.id} value={p.id} disabled={p.data_mode !== 'real'}>
+                    {p.name} — {p.address}{p.data_mode !== 'real' ? ' · DỮ LIỆU MÔ PHỎNG / CHƯA XÁC MINH' : ''}
                   </option>
                 ))}
               </select>
@@ -316,6 +552,16 @@ export function ProviderPortalPage() {
                 onChange={(e) => setDraft({ ...draft, description: e.target.value })}
                 placeholder="Mô tả nội dung diễn ra trong hoạt động..."
               />
+            </label>
+
+            <label className="field-group-3d">
+              <span>Loại trải nghiệm chính</span>
+              <select value={draft.primary_intent} onChange={(e) => setDraft({ ...draft, primary_intent: e.target.value })}>
+                <option value="thủ_công">Thủ công</option>
+                <option value="ẩm_thực">Ẩm thực</option>
+                <option value="văn_hóa">Văn hóa</option>
+                <option value="thư_giãn">Thư giãn</option>
+              </select>
             </label>
 
             <label className="field-group-3d">
@@ -388,6 +634,48 @@ export function ProviderPortalPage() {
                 <span>Không gian trong nhà</span>
               </label>
             </div>
+
+            <div className="form-card-header" style={{ gridColumn: '1 / -1', marginTop: 12 }}>
+              <div>
+                <h3>Nguồn và thời hạn xác minh</h3>
+                <p>Bằng chứng được gắn với phiên bản dữ liệu hiện tại; sửa nội dung sẽ yêu cầu gửi bằng chứng mới.</p>
+              </div>
+            </div>
+            <label className="field-group-3d" style={{ gridColumn: '1 / -1' }}>
+              <span>URL nguồn chứng minh giá, thời lượng, loại hoạt động và hands-on</span>
+              <input type="url" required value={sourceUrl} onChange={(e) => setSourceUrl(e.target.value)} placeholder="https://..." />
+            </label>
+            <label className="field-group-3d">
+              <span>Loại nguồn</span>
+              <select value={sourceType} onChange={(e) => setSourceType(e.target.value)}>
+                <option value="official_website">Website chính thức</option>
+                <option value="provider_confirmation">Xác nhận trực tiếp của cơ sở</option>
+                <option value="field_visit">Khảo sát thực địa</option>
+                <option value="document">Tài liệu</option>
+                <option value="government_dataset">Dữ liệu cơ quan nhà nước</option>
+                <option value="other">Khác</option>
+              </select>
+            </label>
+            <label className="field-group-3d">
+              <span>Tên nguồn / đơn vị xuất bản</span>
+              <input value={sourceLabel} onChange={(e) => setSourceLabel(e.target.value)} placeholder="Trang chính thức của cơ sở" />
+            </label>
+            <label className="field-group-3d">
+              <span>Giấy phép / điều khoản sử dụng nguồn</span>
+              <input value={sourceLicense} onChange={(e) => setSourceLicense(e.target.value)} placeholder="Ví dụ: nội dung do cơ sở cung cấp" />
+            </label>
+            <label className="field-group-3d">
+              <span>Thời điểm kiểm tra nguồn</span>
+              <input type="datetime-local" required value={sourceObservedAt} onChange={(e) => setSourceObservedAt(e.target.value)} />
+            </label>
+            <label className="field-group-3d">
+              <span>Hạn dùng bằng chứng</span>
+              <input type="datetime-local" required value={sourceExpiresAt} onChange={(e) => setSourceExpiresAt(e.target.value)} />
+            </label>
+            <label className="custom-check-pill" style={{ gridColumn: '1 / -1' }}>
+              <input type="checkbox" checked={sourceConfirmsPoi} onChange={(e) => setSourceConfirmsPoi(e.target.checked)} />
+              <span>Nguồn này cũng xác minh tên, địa chỉ, tọa độ và loại POI đã chọn</span>
+            </label>
 
             <div className="form-action-row" style={{ gridColumn: '1 / -1' }}>
               <button className="btn-primary-3d" type="submit">
@@ -478,6 +766,16 @@ export function ProviderPortalPage() {
               />
             </label>
 
+            <label className="field-group-3d">
+              <span>Ca đã được cơ sở xác nhận đến</span>
+              <input
+                type="datetime-local"
+                required
+                value={slotExpiresAt}
+                onChange={(e) => setSlotExpiresAt(e.target.value)}
+              />
+            </label>
+
             <div style={{ display: 'flex', alignItems: 'flex-end' }}>
               <button className="btn-primary-3d w-full" type="submit">
                 <span>Tạo ca hoạt động</span>
@@ -516,6 +814,7 @@ export function ProviderPortalPage() {
                     className="btn-primary-3d btn-sm"
                     onClick={() => {
                       setSlotTarget(item.id)
+                      setSlotExpiresAt(localDateTimeInput(4 * 60 * 60 * 1000))
                       window.scrollTo({ top: 200, behavior: 'smooth' })
                     }}
                   >
@@ -555,6 +854,10 @@ export function ProviderPortalPage() {
                           <span>
                             Còn <strong>{slot.available_reported ?? 'Chưa rõ'}</strong> / {slot.capacity_total} chỗ
                           </span>
+                          <small>
+                            Xác nhận: {slot.confirmed_at ? new Date(slot.confirmed_at).toLocaleString('vi-VN') : 'chưa có'}
+                            {' · '}hết hạn: {slot.expires_at ? new Date(slot.expires_at).toLocaleString('vi-VN') : 'chưa có'}
+                          </small>
                         </div>
 
                         <div className="slot-chip-controls">
