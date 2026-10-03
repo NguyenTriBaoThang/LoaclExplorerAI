@@ -6,9 +6,10 @@ from sqlalchemy import func, select
 from sqlalchemy.orm import Session, joinedload
 
 from app.api.dependencies import get_db, require_roles
-from app.models.entities import AuditLog, Event, Experience, ExperienceSlot, ItineraryStop, POI, Provider, User
-from app.schemas.management import ExperienceDraftRequest, SlotCreateRequest, SlotUpdateRequest
+from app.models.entities import AuditLog, Event, Evidence, Experience, ExperienceSlot, ItineraryStop, POI, Provider, User
+from app.schemas.management import EvidenceCreateRequest, ExperienceDraftRequest, SlotCreateRequest, SlotUpdateRequest
 from app.services.auth_service import hash_password
+from app.services.evidence_service import REQUIRED_FIELDS, target_revision, utc_now
 
 router = APIRouter(prefix="/api/provider", tags=["provider portal"])
 
@@ -42,8 +43,49 @@ def list_provider_experiences(user: User = Depends(require_roles("provider")), d
              "verification_status": item.verification_status, "poi_name": item.poi.name,
              "slots": [{"id": slot.id, "start_at": slot.start_at, "end_at": slot.end_at,
                         "capacity_total": slot.capacity_total, "available_reported": slot.available_reported,
+                        "confirmed_at": slot.confirmed_at, "expires_at": slot.expires_at,
                         "status": slot.status, "version": slot.version} for slot in item.slots]}
             for item in items]
+
+
+@router.post("/evidence", status_code=201)
+def submit_evidence(payload: EvidenceCreateRequest, user: User = Depends(require_roles("provider")), db: Session = Depends(get_db)):
+    provider = _provider(db, user)
+    target = db.get(POI if payload.target_type == "poi" else Experience, payload.target_id)
+    if target is None:
+        raise HTTPException(status_code=404, detail={"code": "EVIDENCE_TARGET_NOT_FOUND", "message": "Target record not found."})
+    if payload.target_type == "poi":
+        owns_target = db.scalar(select(func.count(Experience.id)).where(
+            Experience.poi_id == target.id, Experience.provider_id == provider.id,
+        )) > 0
+    else:
+        owns_target = target.provider_id == provider.id
+    if not owns_target:
+        raise HTTPException(status_code=403, detail={"code": "EVIDENCE_TARGET_FORBIDDEN", "message": "Providers can submit evidence only for their own catalog records."})
+    unknown_fields = set(payload.fields_covered) - REQUIRED_FIELDS[payload.target_type]
+    if unknown_fields:
+        raise HTTPException(status_code=422, detail={"code": "UNKNOWN_EVIDENCE_FIELDS", "message": "Evidence references fields outside this target type.", "fields": sorted(unknown_fields)})
+    now = utc_now()
+    observed_at = payload.observed_at.astimezone(now.tzinfo)
+    expires_at = payload.expires_at.astimezone(now.tzinfo)
+    if observed_at > now:
+        raise HTTPException(status_code=422, detail={"code": "OBSERVATION_IN_FUTURE", "message": "Observed time cannot be in the future."})
+    if expires_at <= now:
+        raise HTTPException(status_code=422, detail={"code": "EVIDENCE_ALREADY_EXPIRED", "message": "Expiry must be in the future."})
+    evidence = Evidence(
+        id=str(uuid4()), source_uri=payload.source_uri, source_type=payload.source_type,
+        source_label=payload.source_label, license=payload.license, notes=payload.notes,
+        submitted_by=user.id, target_type=payload.target_type, target_id=target.id,
+        target_revision=target_revision(payload.target_type, target), fields_covered=payload.fields_covered,
+        observed_at=observed_at, expires_at=expires_at, verification_status="pending",
+    )
+    db.add(evidence)
+    _audit(db, user, "evidence.submitted", "evidence", evidence.id, {
+        "target_type": payload.target_type, "target_id": target.id,
+        "fields_covered": payload.fields_covered,
+    })
+    db.commit()
+    return {"id": evidence.id, "status": evidence.verification_status, "target_revision": evidence.target_revision}
 
 
 @router.post("/experiences", status_code=201)
@@ -81,9 +123,13 @@ def update_experience(experience_id: str, payload: ExperienceDraftRequest, user:
             item.is_indoor = value
         else:
             setattr(item, key, value)
-    if old_status == "verified":
+    item.data_revision += 1
+    if old_status != "hidden":
         item.verification_status = "pending"
-    _audit(db, user, "experience.updated", "experience", item.id, {"review_reset": old_status == "verified"})
+    _audit(db, user, "experience.updated", "experience", item.id, {
+        "review_reset": old_status == "verified", "data_revision": item.data_revision,
+        "previous_evidence_invalidated": True,
+    })
     db.commit()
     return {"id": item.id, "verification_status": item.verification_status}
 
@@ -108,10 +154,27 @@ def create_slot(experience_id: str, payload: SlotCreateRequest, user: User = Dep
         raise HTTPException(status_code=404, detail={"code": "EXPERIENCE_NOT_FOUND", "message": "Experience not found for this provider."})
     if payload.end_at <= payload.start_at:
         raise HTTPException(status_code=422, detail={"code": "INVALID_SLOT_RANGE", "message": "Slot end must be after start."})
+    now = utc_now()
+    expires_at = payload.expires_at.astimezone(now.tzinfo)
+    start_at = payload.start_at.astimezone(now.tzinfo)
+    if expires_at <= now or expires_at > start_at:
+        raise HTTPException(status_code=422, detail={"code": "INVALID_SLOT_EXPIRY", "message": "Slot confirmation must expire after now and no later than the slot start."})
+    if payload.available_reported > payload.capacity_total:
+        raise HTTPException(status_code=422, detail={"code": "CAPACITY_EXCEEDED", "message": "Available seats cannot exceed total capacity."})
     slot = ExperienceSlot(id=str(uuid4()), experience_id=item.id, start_at=payload.start_at, end_at=payload.end_at,
                           capacity_total=payload.capacity_total, available_reported=payload.available_reported,
+                          confirmed_at=now, expires_at=expires_at,
                           status="open" if payload.available_reported else "full", version=1)
     db.add(slot)
+    db.flush()
+    db.add(Evidence(
+        id=str(uuid4()), source_uri=f"provider://{provider.id}/slots/{slot.id}",
+        source_type="provider_confirmation", source_label=provider.name,
+        notes="Authenticated provider confirmation recorded by the provider portal.", submitted_by=user.id,
+        target_type="slot", target_id=slot.id, target_revision=slot.version,
+        fields_covered=sorted(REQUIRED_FIELDS["slot"]), observed_at=now, expires_at=expires_at,
+        verification_status="verified", verified_by=user.id, verified_at=now,
+    ))
     _audit(db, user, "slot.created", "experience_slot", slot.id, {"experience_id": item.id})
     db.commit()
     return {"id": slot.id, "version": slot.version, "status": slot.status}
@@ -132,6 +195,12 @@ def update_slot(slot_id: str, payload: SlotUpdateRequest, user: User = Depends(r
         raise HTTPException(status_code=422, detail={"code": "FULL_SLOT_HAS_CAPACITY", "message": "A full slot cannot report available seats."})
     if payload.status == "open" and payload.available_reported == 0:
         raise HTTPException(status_code=422, detail={"code": "OPEN_SLOT_HAS_NO_CAPACITY", "message": "Use full status when no seats remain."})
+    now = utc_now()
+    if payload.expires_at is not None:
+        slot.expires_at = payload.expires_at.astimezone(now.tzinfo)
+    if payload.status == "open":
+        if slot.expires_at is None or slot.expires_at <= now or slot.expires_at > slot.start_at.replace(tzinfo=slot.start_at.tzinfo or now.tzinfo):
+            raise HTTPException(status_code=422, detail={"code": "FRESH_SLOT_CONFIRMATION_REQUIRED", "message": "Opening a slot requires a future expiry no later than its start time."})
     slot.status = payload.status
     if payload.available_reported is not None:
         if slot.capacity_total is not None and payload.available_reported > slot.capacity_total:
@@ -146,6 +215,16 @@ def update_slot(slot_id: str, payload: SlotUpdateRequest, user: User = Depends(r
         for event in active_events:
             event.status = "resolved"
     slot.version += 1
+    slot.confirmed_at = now
+    if slot.expires_at and slot.expires_at > now:
+        db.add(Evidence(
+            id=str(uuid4()), source_uri=f"provider://{provider.id}/slots/{slot.id}",
+            source_type="provider_confirmation", source_label=provider.name,
+            notes="Authenticated provider confirmation recorded by the provider portal.", submitted_by=user.id,
+            target_type="slot", target_id=slot.id, target_revision=slot.version,
+            fields_covered=sorted(REQUIRED_FIELDS["slot"]), observed_at=now, expires_at=slot.expires_at,
+            verification_status="verified", verified_by=user.id, verified_at=now,
+        ))
     affected = db.scalar(select(func.count(func.distinct(ItineraryStop.itinerary_id))).where(ItineraryStop.slot_id == slot.id, ItineraryStop.status == "planned")) or 0
     _audit(db, user, "slot.updated", "experience_slot", slot.id, {"status": slot.status, "affected_itineraries": affected})
     db.commit()

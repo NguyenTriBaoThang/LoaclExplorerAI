@@ -20,14 +20,8 @@ import { NavLink, Outlet, useNavigate } from 'react-router-dom'
 import { useAuth } from '../auth'
 import { logout } from '../api/client'
 import { setTheme, useTheme } from '../theme'
-
-const links = [
-  { to: '/chat', label: 'Chat với AI' },
-  { to: '/explore', label: 'Khám phá trải nghiệm' },
-  { to: '/planner', label: 'Lập lịch trình' },
-  { to: '/provider', label: 'Dành cho đối tác' },
-  { to: '/about', label: 'Về dự án & Công nghệ' },
-]
+import { useTranslation } from '../i18n'
+import { LanguageSwitcher } from '../components/common/LanguageSwitcher'
 
 export function AppLayout() {
   const [open, setOpen] = useState(false)
@@ -35,7 +29,16 @@ export function AppLayout() {
   const { user, setUser } = useAuth()
   const navigate = useNavigate()
   const theme = useTheme()
+  const { t } = useTranslation()
   const dropdownRef = useRef<HTMLDivElement>(null)
+
+  const links = [
+    { to: '/chat', label: t('nav.chat') },
+    { to: '/explore', label: t('nav.explore') },
+    { to: '/planner', label: t('nav.planner') },
+    { to: '/provider', label: t('nav.provider') },
+    { to: '/about', label: t('nav.about') },
+  ]
 
   // Close dropdown on click outside
   useEffect(() => {
@@ -62,9 +65,9 @@ export function AppLayout() {
   }
 
   const roleLabels: Record<string, { label: string; color: string }> = {
-    traveler: { label: 'Du khách', color: 'badge-role-traveler' },
-    provider: { label: 'Cơ sở đối tác', color: 'badge-role-provider' },
-    admin: { label: 'Quản trị viên', color: 'badge-role-admin' },
+    traveler: { label: t('nav.role.traveler'), color: 'badge-role-traveler' },
+    provider: { label: t('nav.role.provider'), color: 'badge-role-provider' },
+    admin: { label: t('nav.role.admin'), color: 'badge-role-admin' },
   }
 
   const userInitials = (user?.display_name || user?.email || 'U')
@@ -86,7 +89,7 @@ export function AppLayout() {
               <span className="brand-title">
                 Local Explorer <span className="brand-ai-chip">3D AI</span>
               </span>
-              <span className="brand-tagline">TP. HỒ CHÍ MINH · REALTIME</span>
+              <span className="brand-tagline">{t('nav.tagline')}</span>
             </div>
           </NavLink>
 
@@ -107,11 +110,16 @@ export function AppLayout() {
 
           {/* Header Action / User Menu Area */}
           <div className="header-actions-area">
+            {/* Quick CTA */}
             <NavLink to="/chat" className="header-cta-3d">
-              <span>Lên Lịch Ngay</span>
+              <span>{t('nav.planNow')}</span>
               <Sparkles size={15} />
             </NavLink>
 
+            {/* Language Switcher (VN / EN) */}
+            <LanguageSwitcher />
+
+            {/* User Account Menu */}
             {user ? (
               <div className="user-dropdown-container" ref={dropdownRef}>
                 <button
@@ -143,7 +151,7 @@ export function AppLayout() {
                     <div className="dropdown-user-header">
                       <div className="user-avatar-large">{userInitials}</div>
                       <div className="header-info">
-                        <strong>{user.display_name || 'Người dùng'}</strong>
+                        <strong>{user.display_name || user.email.split('@')[0]}</strong>
                         <small>{user.email}</small>
                         <span className="role-tag-pill">
                           {roleLabels[user.role]?.label || user.role}
@@ -159,8 +167,8 @@ export function AppLayout() {
                       >
                         <User size={16} className="text-emerald" />
                         <div>
-                          <span>Hồ sơ cá nhân</span>
-                          <small>Cài đặt tài khoản & mật khẩu</small>
+                          <span>{t('nav.profile')}</span>
+                          <small>{t('nav.profileDesc')}</small>
                         </div>
                       </NavLink>
 
@@ -171,8 +179,8 @@ export function AppLayout() {
                       >
                         <GitCompare size={16} className="text-cyan" />
                         <div>
-                          <span>So sánh lịch trình</span>
-                          <small>Đối chiếu chi phí & thời gian</small>
+                          <span>{t('nav.compare')}</span>
+                          <small>{t('nav.compareDesc')}</small>
                         </div>
                       </NavLink>
 
@@ -184,8 +192,8 @@ export function AppLayout() {
                         >
                           <Store size={16} className="text-amber" />
                           <div>
-                            <span>Cổng quản lý cơ sở</span>
-                            <small>Quản lý khung giờ & hoạt động</small>
+                            <span>{t('nav.providerPortal')}</span>
+                            <small>{t('nav.providerPortalDesc')}</small>
                           </div>
                         </NavLink>
                       )}
@@ -198,8 +206,8 @@ export function AppLayout() {
                         >
                           <ShieldCheck size={16} className="text-rose" />
                           <div>
-                            <span>Trung tâm quản trị</span>
-                            <small>Duyệt dữ liệu, POI & kiểm toán</small>
+                            <span>{t('nav.admin')}</span>
+                            <small>{t('nav.adminDesc')}</small>
                           </div>
                         </NavLink>
                       )}
@@ -212,7 +220,7 @@ export function AppLayout() {
                         onClick={handleLogout}
                       >
                         <LogOut size={16} />
-                        <span>Đăng xuất tài khoản</span>
+                        <span>{t('nav.logout')}</span>
                       </button>
                     </div>
                   </div>
@@ -222,17 +230,18 @@ export function AppLayout() {
               <div className="guest-action-group">
                 <NavLink to="/login" className="btn-login-ghost">
                   <User size={15} />
-                  <span>Đăng nhập</span>
+                  <span>{t('nav.login')}</span>
                 </NavLink>
               </div>
             )}
 
+            {/* Dark / Light Theme Toggle */}
             <button
               type="button"
               className="theme-toggle-3d"
               onClick={() => setTheme(theme === 'dark' ? 'light' : 'dark')}
-              aria-label={theme === 'dark' ? 'Chuyển sang giao diện sáng' : 'Chuyển sang giao diện tối'}
-              title={theme === 'dark' ? 'Giao diện sáng' : 'Giao diện tối'}
+              aria-label={theme === 'dark' ? t('nav.themeLight') : t('nav.themeDark')}
+              title={theme === 'dark' ? t('nav.themeLight') : t('nav.themeDark')}
             >
               {theme === 'dark' ? <Sun size={17} /> : <Moon size={17} />}
             </button>
@@ -241,7 +250,7 @@ export function AppLayout() {
             <button
               className="menu-toggle-3d"
               onClick={() => setOpen(!open)}
-              aria-label={open ? 'Đóng menu' : 'Mở menu'}
+              aria-label={open ? t('nav.close') : t('nav.menu')}
             >
               {open ? <X size={22} /> : <Menu size={22} />}
             </button>
@@ -252,6 +261,11 @@ export function AppLayout() {
         {open && (
           <div className="mobile-nav-drawer animate-fadeIn">
             <div className="mobile-links-list">
+              <div className="mobile-lang-row" style={{ padding: '8px 12px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: '1px solid var(--border-subtle)' }}>
+                <span style={{ fontSize: '12px', fontWeight: 600, color: 'var(--text-muted)' }}>Ngôn ngữ / Language:</span>
+                <LanguageSwitcher />
+              </div>
+
               {links.map((link) => (
                 <NavLink
                   key={link.to}
@@ -275,7 +289,7 @@ export function AppLayout() {
                     className="mobile-nav-item"
                   >
                     <User size={16} className="text-emerald" />
-                    <span>Hồ sơ của tôi ({user.display_name || user.email})</span>
+                    <span>{t('nav.profile')} ({user.display_name || user.email.split('@')[0]})</span>
                   </NavLink>
                   <NavLink
                     to="/compare"
@@ -283,7 +297,7 @@ export function AppLayout() {
                     className="mobile-nav-item"
                   >
                     <GitCompare size={16} className="text-cyan" />
-                    <span>So sánh lịch trình</span>
+                    <span>{t('nav.compare')}</span>
                   </NavLink>
                   {user.role === 'provider' && (
                     <NavLink
@@ -292,7 +306,7 @@ export function AppLayout() {
                       className="mobile-nav-item"
                     >
                       <Store size={16} className="text-amber" />
-                      <span>Cổng quản lý cơ sở</span>
+                      <span>{t('nav.providerPortal')}</span>
                     </NavLink>
                   )}
                   {user.role === 'admin' && (
@@ -302,7 +316,7 @@ export function AppLayout() {
                       className="mobile-nav-item"
                     >
                       <ShieldCheck size={16} className="text-rose" />
-                      <span>Trang quản trị</span>
+                      <span>{t('nav.admin')}</span>
                     </NavLink>
                   )}
                   <button
@@ -311,7 +325,7 @@ export function AppLayout() {
                     onClick={handleLogout}
                   >
                     <LogOut size={16} />
-                    <span>Đăng xuất</span>
+                    <span>{t('nav.logout')}</span>
                   </button>
                 </>
               ) : (
@@ -321,14 +335,14 @@ export function AppLayout() {
                     onClick={() => setOpen(false)}
                     className="btn-secondary-3d w-full text-center"
                   >
-                    Đăng nhập
+                    {t('nav.login')}
                   </NavLink>
                   <NavLink
                     to="/register"
                     onClick={() => setOpen(false)}
                     className="btn-primary-3d w-full text-center"
                   >
-                    Đăng ký tài khoản
+                    {t('nav.register')}
                   </NavLink>
                 </div>
               )}
@@ -353,54 +367,53 @@ export function AppLayout() {
                 <span>Local Explorer AI</span>
               </NavLink>
               <p className="footer-desc">
-                Nền tảng gợi ý lịch trình thông minh thời gian thực cho TP. Hồ Chí Minh.
-                Kết hợp dữ liệu khung giờ mở thực tế, sức chứa địa điểm và thuật toán Heuristic tối ưu hóa di chuyển.
+                {t('footer.desc')}
               </p>
               <div className="footer-live-status">
                 <span className="live-dot-glow" />
-                <span>Heuristic Engine Online · Dữ liệu mô phỏng minh bạch</span>
+                <span>{t('footer.onlineStatus')}</span>
               </div>
               <div className="footer-coords">
                 <MapPin size={13} className="text-amber" />
-                <span>Tọa độ trung tâm: 10.7769° N, 106.7009° E (Q.1)</span>
+                <span>{t('footer.coords')}</span>
               </div>
             </div>
 
             <div className="footer-links-col">
-              <span className="footer-col-title">Khám Phá Nhanh</span>
-              <NavLink to="/explore">Kho trải nghiệm địa phương</NavLink>
-              <NavLink to="/planner">Lập lịch trình tự động</NavLink>
-              <NavLink to="/provider">Dành cho đối tác & cơ sở</NavLink>
-              <NavLink to="/about">Kiến trúc hệ thống POI & Slot</NavLink>
-              <NavLink to="/compare">So sánh các phương án</NavLink>
+              <span className="footer-col-title">{t('footer.colExplore')}</span>
+              <NavLink to="/explore">{t('nav.explore')}</NavLink>
+              <NavLink to="/planner">{t('nav.planner')}</NavLink>
+              <NavLink to="/provider">{t('nav.provider')}</NavLink>
+              <NavLink to="/about">{t('nav.about')}</NavLink>
+              <NavLink to="/compare">{t('nav.compare')}</NavLink>
             </div>
 
             <div className="footer-links-col">
-              <span className="footer-col-title">Cam Kết Minh Bạch</span>
+              <span className="footer-col-title">{t('footer.colPolicy')}</span>
               <div className="footer-policy-item">
                 <CheckCircle2 size={14} className="text-emerald" />
-                <span>Không ảo tưởng thông tin (Hallucination-free)</span>
+                <span>{t('footer.noHallucination')}</span>
               </div>
               <div className="footer-policy-item">
                 <CheckCircle2 size={14} className="text-emerald" />
-                <span>Minh bạch khung giờ & độ chắc chắn</span>
+                <span>{t('footer.timeTransparency')}</span>
               </div>
               <div className="footer-policy-item">
                 <CheckCircle2 size={14} className="text-emerald" />
-                <span>Không thu phí trung gian du khách</span>
+                <span>{t('footer.noMiddleman')}</span>
               </div>
               <div className="footer-policy-item">
                 <CheckCircle2 size={14} className="text-emerald" />
-                <span>Thuật toán chạy độc lập tốc độ 0ms</span>
+                <span>{t('footer.instantSpeed')}</span>
               </div>
             </div>
           </div>
 
           <div className="footer-bottom">
-            <span>© 2026 Local Explorer AI. Khám phá đúng trải nghiệm, đúng thời điểm.</span>
+            <span>{t('footer.copyright')}</span>
             <div className="footer-credits">
-              <span>Được xây dựng với <Heart size={12} className="inline text-rose-500 fill-rose-500" /> dành cho Sài Gòn</span>
-              <span className="footer-version-tag">3D Experience Architecture v2.5</span>
+              <span>{t('footer.builtWith')} <Heart size={12} className="inline text-rose-500 fill-rose-500" /></span>
+              <span className="footer-version-tag">{t('footer.version')}</span>
             </div>
           </div>
         </div>

@@ -37,25 +37,40 @@ import { SimulatedBadge } from '../components/common/StatusBadge'
 import { TiltCard3D } from '../components/3d/TiltCard3D'
 import type { Itinerary } from '../types'
 import { useAuth } from '../auth'
+import { useTranslation } from '../i18n'
 
-const reasonCopy: Record<string, string> = {
-  INTENT_MATCH: 'Ưu tiên trải nghiệm khớp chính xác với sở thích bạn đã chọn.',
-  WITHIN_BUDGET: 'Chi phí ước tính nằm an toàn trong khoảng ngân sách bạn đặt.',
-  SLOT_AVAILABLE: 'Khung giờ trải nghiệm khớp với mốc thời gian di chuyển của chuyến đi.',
-  CAPACITY_UNKNOWN: 'Sức chứa chưa được cập nhật chính thức; hãy liên hệ trước khi đến.',
-  MOCK_ROUTING: 'Thời gian di chuyển được tính theo khoảng cách thực tế giữa các quận TP. HCM.',
-  SIMULATED_DATA: 'Dữ liệu trải nghiệm và giá tiền trong bản demo mô phỏng.',
-  LOCKED_ACTIVITY: 'Trải nghiệm đã được bạn ghim cố định trong hành trình.',
+const getReasonCopy = (code: string, locale: string): string => {
+  const vi: Record<string, string> = {
+    INTENT_MATCH: 'Ưu tiên trải nghiệm khớp chính xác với sở thích bạn đã chọn.',
+    WITHIN_BUDGET: 'Chi phí ước tính nằm an toàn trong khoảng ngân sách bạn đặt.',
+    SLOT_AVAILABLE: 'Khung giờ trải nghiệm khớp với mốc thời gian di chuyển của chuyến đi.',
+    CAPACITY_UNKNOWN: 'Sức chứa chưa được cập nhật chính thức; hãy liên hệ trước khi đến.',
+    MOCK_ROUTING: 'Thời gian di chuyển được tính theo khoảng cách thực tế giữa các quận TP. HCM.',
+    SIMULATED_DATA: 'Dữ liệu trải nghiệm và giá tiền trong bản demo mô phỏng.',
+    LOCKED_ACTIVITY: 'Trải nghiệm đã được bạn ghim cố định trong hành trình.',
+  }
+  const en: Record<string, string> = {
+    INTENT_MATCH: 'Prioritized experience perfectly matching your chosen preferences.',
+    WITHIN_BUDGET: 'Estimated expense is safely within your group budget limit.',
+    SLOT_AVAILABLE: 'Experience timeslot synchronizes with transit schedule.',
+    CAPACITY_UNKNOWN: 'Capacity not yet officially reported; please call ahead.',
+    MOCK_ROUTING: 'Transit duration calculated with real HCMC inter-district distances.',
+    SIMULATED_DATA: 'Experience and pricing data in transparent simulated demo mode.',
+    LOCKED_ACTIVITY: 'Experience pinned and locked by your request.',
+  }
+  const dict = locale === 'en' ? en : vi
+  return dict[code] ?? code.replaceAll('_', ' ')
 }
 
-const timeLabel = (value: string) =>
-  new Intl.DateTimeFormat('vi-VN', {
+const timeLabel = (value: string, locale: string) =>
+  new Intl.DateTimeFormat(locale === 'en' ? 'en-US' : 'vi-VN', {
     hour: '2-digit',
     minute: '2-digit',
     timeZone: 'Asia/Ho_Chi_Minh',
   }).format(new Date(value))
 
 export function ItineraryPage() {
+  const { t, locale } = useTranslation()
   const { id = '' } = useParams()
   const location = useLocation()
   const initial = (location.state as { itinerary?: Itinerary } | null)?.itinerary
@@ -150,10 +165,10 @@ export function ItineraryPage() {
         setCopied(true)
         setTimeout(() => setCopied(false), 2500)
       } catch {
-        setNotice('Link đã tạo bên dưới; hãy sao chép thủ công.')
+        setNotice(locale === 'en' ? 'Link created below; please copy manually.' : 'Link đã tạo bên dưới; hãy sao chép thủ công.')
       }
     } catch {
-      setNotice('Đăng nhập bằng tài khoản chủ lịch để tạo liên kết chia sẻ.')
+      setNotice(locale === 'en' ? 'Sign in with trip owner account to generate shareable link.' : 'Đăng nhập bằng tài khoản chủ lịch để tạo liên kết chia sẻ.')
     }
   }
 
@@ -162,7 +177,7 @@ export function ItineraryPage() {
     try {
       await submitFeedback(id, rating, reviewText)
       setReviewText('')
-      setNotice('Đã gửi đánh giá thành công! Cảm ơn bạn đã phản hồi.')
+      setNotice(locale === 'en' ? 'Review submitted successfully! Thank you for your feedback.' : 'Đã gửi đánh giá thành công! Cảm ơn bạn đã phản hồi.')
     } catch (reason) {
       setNotice(apiErrorMessage(reason))
     }
@@ -173,7 +188,7 @@ export function ItineraryPage() {
       const result = await requestReplanAdvice(id, eventId)
       setAdvice((old) => ({ ...old, [eventId]: result as unknown as (typeof old)[string] }))
     } catch {
-      setNotice('Chưa thể tạo gợi ý đổi lịch. Vui lòng thử lại sau.')
+      setNotice(locale === 'en' ? 'Unable to generate replan proposal. Please try again.' : 'Chưa thể tạo gợi ý đổi lịch. Vui lòng thử lại sau.')
     }
   }
 
@@ -192,13 +207,13 @@ export function ItineraryPage() {
         proposal_code: proposal.code,
         base_version: selected.base_version,
       })
-      setNotice('Đã áp dụng phương án mới thành công!')
+      setNotice(locale === 'en' ? 'Applied alternative proposal successfully!' : 'Đã áp dụng phương án mới thành công!')
       const updated = await getItinerary(id)
       setItinerary(updated)
       getItineraryVersions(id).then(setVersions).catch(() => undefined)
       setNotifications((old) => old.filter((item) => item.event_id !== eventId))
     } catch {
-      setNotice('Phương án không còn khả thi hoặc phiên bản lịch đã đổi.')
+      setNotice(locale === 'en' ? 'Proposal no longer feasible or version outdated.' : 'Phương án không còn khả thi hoặc phiên bản lịch đã đổi.')
     }
   }
 
@@ -210,8 +225,8 @@ export function ItineraryPage() {
     return (
       <div className="page-wrap page-loading-3d">
         <span className="loader-orbit" />
-        <h2>Đang tối ưu hóa hành trình của bạn...</h2>
-        <p>Thuật toán đang tính toán các khung giờ và thứ tự di chuyển tối ưu nhất.</p>
+        <h2>{t('planner.planning')}</h2>
+        <p>{locale === 'en' ? 'Algorithm is calculating optimal timeslots and transit buffers.' : 'Thuật toán đang tính toán các khung giờ và thứ tự di chuyển tối ưu nhất.'}</p>
       </div>
     )
   }
@@ -221,10 +236,10 @@ export function ItineraryPage() {
       <div className="page-wrap not-found-3d">
         <div className="not-found-card">
           <AlertCircle size={40} className="text-amber" />
-          <h1>Chưa thể tải lịch trình</h1>
-          <p>{error || 'Không tìm thấy dữ liệu cho mã lịch trình này.'}</p>
+          <h1>{locale === 'en' ? 'Unable to load itinerary' : 'Chưa thể tải lịch trình'}</h1>
+          <p>{error || (locale === 'en' ? 'Itinerary data not found.' : 'Không tìm thấy dữ liệu cho mã lịch trình này.')}</p>
           <Link to="/planner" className="btn-primary-3d">
-            Tạo lịch trình mới <ArrowRight size={17} />
+            {t('nav.planNow')} <ArrowRight size={17} />
           </Link>
         </div>
       </div>
@@ -257,26 +272,26 @@ export function ItineraryPage() {
       {/* Top Navigation & Actions */}
       <div className="itinerary-topbar">
         <Link to="/planner" className="btn-back-link">
-          <ArrowLeft size={16} /> Chỉnh sửa thông tin chuyến đi
+          <ArrowLeft size={16} /> {t('itinerary.backToEdit')}
         </Link>
         <div className="topbar-actions">
           <button
             type="button"
             className="btn-action-icon"
             onClick={handleShare}
-            title="Chia sẻ liên kết"
+            title={t('itinerary.share')}
           >
             {copied ? <Check size={15} className="text-emerald" /> : <Share2 size={15} />}
-            <span>{copied ? 'Đã sao chép!' : 'Chia sẻ'}</span>
+            <span>{copied ? t('itinerary.copied') : t('itinerary.share')}</span>
           </button>
           <button
             type="button"
             className="btn-action-icon"
             onClick={handlePrint}
-            title="In lịch trình"
+            title={t('itinerary.printSave')}
           >
             <Printer size={15} />
-            <span>In / Lưu</span>
+            <span>{t('itinerary.printSave')}</span>
           </button>
           <SimulatedBadge />
         </div>
@@ -290,7 +305,7 @@ export function ItineraryPage() {
             type="button"
             className="alert-dismiss-btn"
             onClick={() => setNotice('')}
-            aria-label="Đóng"
+            aria-label={t('common.close')}
           >
             <X size={14} />
           </button>
@@ -301,7 +316,7 @@ export function ItineraryPage() {
       {shareToken && (
         <div className="share-link-banner animate-fadeIn">
           <div className="share-link-info">
-            <span className="share-link-label">Liên kết chia sẻ công khai:</span>
+            <span className="share-link-label">{t('itinerary.publicShareUrl')}</span>
             <div className="share-input-group">
               <input
                 readOnly
@@ -318,7 +333,7 @@ export function ItineraryPage() {
                   setTimeout(() => setCopied(false), 2000)
                 }}
               >
-                <Copy size={13} /> {copied ? 'Đã chép' : 'Sao chép'}
+                <Copy size={13} /> {copied ? t('itinerary.copiedShort') : t('itinerary.copy')}
               </button>
               <button
                 type="button"
@@ -328,13 +343,13 @@ export function ItineraryPage() {
                     await api.delete(`/itineraries/${id}/share`)
                     setShareToken('')
                     setShareUrl('')
-                    setNotice('Đã thu hồi link chia sẻ.')
+                    setNotice(locale === 'en' ? 'Shareable link revoked.' : 'Đã thu hồi link chia sẻ.')
                   } catch {
-                    setNotice('Không thể thu hồi liên kết.')
+                    setNotice(locale === 'en' ? 'Unable to revoke link.' : 'Không thể thu hồi liên kết.')
                   }
                 }}
               >
-                Thu hồi link
+                {t('itinerary.revokeShare')}
               </button>
             </div>
           </div>
@@ -347,8 +362,8 @@ export function ItineraryPage() {
           <div className="replan-header">
             <ShieldAlert size={22} className="text-amber" />
             <div>
-              <h3>Cảnh báo thay đổi ca hoạt động</h3>
-              <p>Một điểm trong lịch trình của bạn vừa có thông báo hủy ca hoặc điều chỉnh giờ.</p>
+              <h3>{t('itinerary.slotChangeAlert')}</h3>
+              <p>{t('itinerary.slotChangeDesc')}</p>
             </div>
           </div>
 
@@ -361,16 +376,18 @@ export function ItineraryPage() {
                   className="btn-primary-3d btn-sm"
                   onClick={() => void getAdvice(item.event_id)}
                 >
-                  <RefreshCw size={13} /> Tìm phương án thay thế
+                  <RefreshCw size={13} /> {t('itinerary.findAlt')}
                 </button>
 
                 {advice[item.event_id]?.proposals.map((proposal) => (
                   <article key={proposal.code} className="proposal-card-3d">
                     <div className="proposal-top">
                       <div className="proposal-badge-wrap">
-                        <span className="proposal-code">Phương án {proposal.code}</span>
+                        <span className="proposal-code">
+                          {t('itinerary.proposal', { code: proposal.code })}
+                        </span>
                         {proposal.is_recommended && (
-                          <span className="proposal-rec-tag">Đề xuất tối ưu</span>
+                          <span className="proposal-rec-tag">{t('itinerary.optimalProposal')}</span>
                         )}
                       </div>
                       <h4>{proposal.title}</h4>
@@ -378,15 +395,17 @@ export function ItineraryPage() {
 
                     <div className="proposal-stats-row">
                       <span className="prop-stat">
-                        Chênh lệch: {proposal.cost_diff_vnd >= 0 ? '+' : ''}
-                        {proposal.cost_diff_vnd.toLocaleString('vi-VN')}₫
+                        {t('itinerary.diffCost', {
+                          cost: `${proposal.cost_diff_vnd >= 0 ? '+' : ''}${proposal.cost_diff_vnd.toLocaleString('vi-VN')}₫`,
+                        })}
                       </span>
                       <span className="prop-stat">
-                        Di chuyển: {proposal.travel_time_diff_min > 0 ? '+' : ''}
-                        {proposal.travel_time_diff_min} phút
+                        {t('itinerary.diffTravel', {
+                          travel: `${proposal.travel_time_diff_min > 0 ? '+' : ''}${proposal.travel_time_diff_min} ${locale === 'en' ? 'mins' : 'phút'}`,
+                        })}
                       </span>
                       <span className="prop-stat">
-                        Dự kiến về: {proposal.estimated_return_time}
+                        {t('itinerary.estReturn', { time: proposal.estimated_return_time })}
                       </span>
                     </div>
 
@@ -397,7 +416,7 @@ export function ItineraryPage() {
                       className="btn-primary-3d btn-sm"
                       onClick={() => void acceptProposal(item.event_id, proposal)}
                     >
-                      <Check size={14} /> Áp dụng phương án {proposal.code}
+                      <Check size={14} /> {t('itinerary.applyProposal', { code: proposal.code })}
                     </button>
                   </article>
                 ))}
@@ -413,8 +432,8 @@ export function ItineraryPage() {
           <div className="version-diff-header">
             <History size={18} className="text-cyan" />
             <div>
-              <h3>Lịch sử điều chỉnh lịch trình</h3>
-              <p>Lịch đã được tối ưu lại qua các phiên bản.</p>
+              <h3>{t('itinerary.revisionHistory')}</h3>
+              <p>{t('itinerary.revisionDesc')}</p>
             </div>
           </div>
           {(() => {
@@ -431,24 +450,28 @@ export function ItineraryPage() {
             return (
               <div className="version-diff-body">
                 <div className="version-badges-row">
-                  <span className="version-chip">v{oldVersion.version} → v{newVersion.version}</span>
-                  <span className="version-diff-stat">
-                    Chi phí: {costDiff >= 0 ? '+' : ''}
-                    {costDiff.toLocaleString('vi-VN')}₫
+                  <span className="version-chip">
+                    {t('itinerary.versionShift', { old: oldVersion.version, next: newVersion.version })}
                   </span>
                   <span className="version-diff-stat">
-                    Di chuyển: {timeDiff >= 0 ? '+' : ''}
-                    {timeDiff} phút
+                    {t('itinerary.costShift', {
+                      cost: `${costDiff >= 0 ? '+' : ''}${costDiff.toLocaleString('vi-VN')}₫`,
+                    })}
+                  </span>
+                  <span className="version-diff-stat">
+                    {t('itinerary.travelShift', {
+                      travel: `${timeDiff >= 0 ? '+' : ''}${timeDiff} ${locale === 'en' ? 'mins' : 'phút'}`,
+                    })}
                   </span>
                 </div>
                 {added.length > 0 && (
                   <p className="version-changes-text">
-                    <strong>Điểm mới thêm:</strong> {added.map((s) => s.name).join(', ')}
+                    <strong>{t('itinerary.newAddedStops', { stops: added.map((s) => s.name).join(', ') })}</strong>
                   </p>
                 )}
                 {removed.length > 0 && (
                   <p className="version-changes-text">
-                    <strong>Điểm đã bỏ:</strong> {removed.map((s) => s.name).join(', ')}
+                    <strong>{t('itinerary.omittedStops', { stops: removed.map((s) => s.name).join(', ') })}</strong>
                   </p>
                 )}
               </div>
@@ -461,14 +484,13 @@ export function ItineraryPage() {
       <div className="itinerary-header-3d">
         <div>
           <span className="eyebrow-3d">
-            <span className="eyebrow-dot" /> LỊCH TRÌNH ĐƯỢC TỐI ƯU HÓA
+            <span className="eyebrow-dot" /> {t('itinerary.eyebrow')}
           </span>
           <h1 className="page-heading-3d">
-            Một ngày theo <em>nhịp của bạn.</em>
+            {t('itinerary.headingMain')} <em>{t('itinerary.headingHighlight')}</em>
           </h1>
           <p className="page-subtext-3d">
-            {itinerary.stops.length} trải nghiệm đã được sắp xếp khoa học dựa trên thời gian thực và
-            khoảng cách di chuyển.
+            {t('itinerary.headingDesc', { count: itinerary.stops.length })}
           </p>
         </div>
         <div
@@ -479,8 +501,8 @@ export function ItineraryPage() {
           <span className="feasibility-dot" />
           <span>
             {itinerary.feasibility_status === 'tentative'
-              ? 'Có hoạt động cần xác nhận sức chứa'
-              : 'Khả thi cao theo khung giờ mở'}
+              ? t('itinerary.feasibilityTentative')
+              : t('itinerary.feasibilityHigh')}
           </span>
         </div>
       </div>
@@ -492,13 +514,13 @@ export function ItineraryPage() {
             <Clock3 size={20} />
           </div>
           <div className="kpi-info">
-            <small>TỔNG THỜI GIAN</small>
+            <small>{t('itinerary.kpiDuration')}</small>
             <strong>
               {Math.floor(totalMinutes / 60)}h {totalMinutes % 60}p
             </strong>
             <span>
-              Từ {timeLabel(tripStartAt || itinerary.stops[0].start_at)} · về{' '}
-              {timeLabel(estimatedReturnAt || lastStop.end_at)}
+              {timeLabel(tripStartAt || itinerary.stops[0].start_at, locale)} —{' '}
+              {timeLabel(estimatedReturnAt || lastStop.end_at, locale)}
             </span>
           </div>
         </TiltCard3D>
@@ -508,9 +530,9 @@ export function ItineraryPage() {
             <Route size={20} />
           </div>
           <div className="kpi-info">
-            <small>DI CHUYỂN ƯỚC TÍNH</small>
-            <strong>{itinerary.total_travel_min} phút</strong>
-            <span>Thời gian đi lại giữa các quận</span>
+            <small>{t('itinerary.kpiTravel')}</small>
+            <strong>{itinerary.total_travel_min} {locale === 'en' ? 'mins' : 'phút'}</strong>
+            <span>{t('itinerary.kpiTravelSub')}</span>
           </div>
         </TiltCard3D>
 
@@ -519,9 +541,9 @@ export function ItineraryPage() {
             <Wallet size={20} />
           </div>
           <div className="kpi-info">
-            <small>CHI PHÍ ƯỚC TÍNH</small>
+            <small>{t('itinerary.kpiCost')}</small>
             <strong>{itinerary.estimated_cost_vnd.toLocaleString('vi-VN')}₫</strong>
-            <span>Vé & hoạt động trọn gói</span>
+            <span>{t('itinerary.kpiCostSub')}</span>
           </div>
         </TiltCard3D>
 
@@ -530,9 +552,9 @@ export function ItineraryPage() {
             <MapPin size={20} />
           </div>
           <div className="kpi-info">
-            <small>ĐIỂM DỪNG CHÂN</small>
-            <strong>{itinerary.stops.length} trải nghiệm</strong>
-            <span>Tại trung tâm TP. Hồ Chí Minh</span>
+            <small>{t('itinerary.kpiStops')}</small>
+            <strong>{itinerary.stops.length} {locale === 'en' ? 'stops' : 'trải nghiệm'}</strong>
+            <span>{t('itinerary.kpiStopsSub')}</span>
           </div>
         </TiltCard3D>
       </div>
@@ -543,11 +565,11 @@ export function ItineraryPage() {
         <section className="timeline-col-3d">
           <div className="timeline-header-bar">
             <div>
-              <span className="results-sub">DÒNG THỜI GIAN CHUYẾN ĐI</span>
-              <strong className="timeline-main-title">Thứ tự trải nghiệm</strong>
+              <span className="results-sub">{t('itinerary.timelineSubtitle')}</span>
+              <strong className="timeline-main-title">{t('itinerary.timelineMain')}</strong>
             </div>
             <span className="timeline-date-chip">
-              {new Intl.DateTimeFormat('vi-VN', {
+              {new Intl.DateTimeFormat(locale === 'en' ? 'en-US' : 'vi-VN', {
                 dateStyle: 'medium',
                 timeZone: 'Asia/Ho_Chi_Minh',
               }).format(new Date(itinerary.stops[0]?.start_at ?? itinerary.data_as_of))}
@@ -578,7 +600,7 @@ export function ItineraryPage() {
                     <div className="stop-top-meta">
                       <span className="stop-time-range">
                         <Clock3 size={13} className="text-emerald" />
-                        {timeLabel(stop.start_at)} — {timeLabel(stop.end_at)}
+                        {timeLabel(stop.start_at, locale)} — {timeLabel(stop.end_at, locale)}
                       </span>
                       <span className="stop-category-tag">{stop.category}</span>
                     </div>
@@ -590,17 +612,19 @@ export function ItineraryPage() {
                     </p>
 
                     <div className="stop-footer-meta">
-                      <span className="meta-badge-item">Thời lượng: {stop.duration_min} phút</span>
                       <span className="meta-badge-item">
-                        {stop.cost_vnd.toLocaleString('vi-VN')}₫ / người
+                        {t('itinerary.durationMinutes', { min: stop.duration_min })}
+                      </span>
+                      <span className="meta-badge-item">
+                        {stop.cost_vnd.toLocaleString('vi-VN')}₫ / {locale === 'en' ? 'person' : 'người'}
                       </span>
                       {stop.availability_known ? (
                         <span className="stop-status-pill status-pill-confirmed">
-                          <CheckCircle2 size={12} /> Có báo cáo chỗ
+                          <CheckCircle2 size={12} /> {t('itinerary.reportedCapacity')}
                         </span>
                       ) : (
                         <span className="stop-status-pill status-pill-tentative">
-                          <AlertCircle size={12} /> Cần gọi xác nhận
+                          <AlertCircle size={12} /> {t('itinerary.callToConfirm')}
                         </span>
                       )}
                     </div>
@@ -612,7 +636,7 @@ export function ItineraryPage() {
                   <div className="travel-leg-indicator">
                     <div className="travel-leg-pill">
                       <Car size={13} className="text-emerald" />
-                      <span>~20 phút di chuyển giữa các điểm dừng</span>
+                      <span>{t('itinerary.transitLeg', { min: 20 })}</span>
                     </div>
                   </div>
                 )}
@@ -625,10 +649,12 @@ export function ItineraryPage() {
         <section className="map-col-3d">
           <div className="map-panel-header-3d">
             <div>
-              <span className="map-sub">LỘ TRÌNH DI CHUYỂN</span>
-              <strong className="map-title">Bản đồ vệ tinh & Lộ trình</strong>
+              <span className="map-sub">{t('itinerary.mapSub')}</span>
+              <strong className="map-title">{t('itinerary.mapMain')}</strong>
             </div>
-            <span className="route-count-tag">{points.length} chặng dừng</span>
+            <span className="route-count-tag">
+              {t('itinerary.routeStopsCount', { count: points.length })}
+            </span>
           </div>
 
           <MapAdapter
@@ -640,7 +666,7 @@ export function ItineraryPage() {
 
           <div className="map-route-caption">
             <span className="route-dot-active" />
-            <span>Đường di chuyển được ước tính theo ma trận cự ly TP. Hồ Chí Minh.</span>
+            <span>{t('itinerary.routeMatrixNote')}</span>
           </div>
         </section>
       </div>
@@ -652,8 +678,8 @@ export function ItineraryPage() {
             <Sparkles size={20} className="text-emerald" />
           </div>
           <div>
-            <span className="explanation-eyebrow">TÍNH MINH BẠCH CỦA THUẬT TOÁN</span>
-            <h2 className="explanation-title">Vì sao lịch trình này được đề xuất?</h2>
+            <span className="explanation-eyebrow">{t('itinerary.algorithmTransparency')}</span>
+            <h2 className="explanation-title">{t('itinerary.whyProposed')}</h2>
           </div>
         </div>
 
@@ -661,7 +687,7 @@ export function ItineraryPage() {
           {itinerary.explanation.reason_codes.map((code) => (
             <div key={code} className="reason-code-item">
               <CheckCircle2 size={16} className="text-emerald flex-shrink-0" />
-              <span>{reasonCopy[code] ?? code.replaceAll('_', ' ')}</span>
+              <span>{getReasonCopy(code, locale)}</span>
             </div>
           ))}
         </div>
@@ -670,16 +696,15 @@ export function ItineraryPage() {
           <div className="lost-intents-notice">
             <AlertCircle size={15} />
             <span>
-              Một số mục đích chưa tìm được khung giờ phù hợp:{' '}
-              {itinerary.explanation.lost_intents.join(', ')}.
+              {t('itinerary.lostIntents', { lost: itinerary.explanation.lost_intents.join(', ') })}
             </span>
           </div>
         )}
 
         <div className="explanation-footer-bar">
-          <span>Bạn muốn đổi sang khoảng thời gian khác hoặc giảm bớt điểm dừng?</span>
+          <span>{t('itinerary.tryAnotherQuestion')}</span>
           <Link to="/planner" className="btn-replan-link">
-            <span>Thử phương án khác</span>
+            <span>{t('itinerary.tryAnotherBtn')}</span>
             <ArrowRight size={15} />
           </Link>
         </div>
@@ -690,15 +715,15 @@ export function ItineraryPage() {
         <div className="feedback-header">
           <Star size={20} className="text-amber" />
           <div>
-            <h3>Đánh giá sau chuyến đi</h3>
-            <p>Phản hồi của bạn giúp cộng đồng khám phá du lịch bản địa tốt hơn.</p>
+            <h3>{t('itinerary.postTripReview')}</h3>
+            <p>{t('itinerary.postTripSub')}</p>
           </div>
         </div>
 
         {user?.role === 'traveler' || user?.role === 'admin' ? (
           <form onSubmit={handleFeedback} className="feedback-form-layout">
             <div className="feedback-rating-row">
-              <span className="rating-label">Mức độ hài lòng:</span>
+              <span className="rating-label">{t('itinerary.satisfactionLevel')}</span>
               <div className="star-rating-buttons">
                 {[1, 2, 3, 4, 5].map((star) => (
                   <button
@@ -706,7 +731,7 @@ export function ItineraryPage() {
                     type="button"
                     className={`star-btn ${rating >= star ? 'star-active' : ''}`}
                     onClick={() => setRating(star)}
-                    aria-label={`${star} sao`}
+                    aria-label={`${star} star`}
                   >
                     <Star
                       size={20}
@@ -716,18 +741,18 @@ export function ItineraryPage() {
                 ))}
                 <span className="rating-score-text">
                   {rating === 5
-                    ? 'Tuyệt vời!'
+                    ? t('itinerary.rate5')
                     : rating === 4
-                    ? 'Rất tốt'
+                    ? t('itinerary.rate4')
                     : rating === 3
-                    ? 'Bình thường'
-                    : 'Chưa hài lòng'}
+                    ? t('itinerary.rate3')
+                    : t('itinerary.rateLow')}
                 </span>
               </div>
             </div>
 
             <div className="field-group-3d">
-              <span>Nhận xét chi tiết của bạn</span>
+              <span>{t('itinerary.detailedFeedback')}</span>
               <textarea
                 required
                 minLength={1}
@@ -735,23 +760,23 @@ export function ItineraryPage() {
                 rows={3}
                 value={reviewText}
                 onChange={(e) => setReviewText(e.target.value)}
-                placeholder="Chia sẻ trải nghiệm thực tế về điểm đến, không gian, thời gian di chuyển..."
+                placeholder={t('itinerary.feedbackPlaceholder')}
                 className="feedback-textarea"
               />
             </div>
 
             <button type="submit" className="btn-primary-3d">
-              <span>Gửi đánh giá</span>
+              <span>{t('itinerary.submitFeedback')}</span>
               <ArrowRight size={16} />
             </button>
           </form>
         ) : (
           <div className="feedback-guest-notice">
             <p>
-              Đăng nhập bằng tài khoản du khách để gửi phản hồi và tích lũy lịch sử trải nghiệm.
+              {t('itinerary.loginToReview')}
             </p>
             <Link to="/login" className="btn-secondary-3d btn-sm">
-              Đăng nhập ngay
+              {t('itinerary.loginNow')}
             </Link>
           </div>
         )}
@@ -759,7 +784,7 @@ export function ItineraryPage() {
 
       {activeStop && (
         <div className="sr-only" aria-live="polite">
-          Đang xem {activeStop.name} trên bản đồ
+          {locale === 'en' ? `Viewing ${activeStop.name} on map` : `Đang xem ${activeStop.name} trên bản đồ`}
         </div>
       )}
     </div>

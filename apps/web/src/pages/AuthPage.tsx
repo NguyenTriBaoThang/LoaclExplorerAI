@@ -8,13 +8,14 @@ import {
   ArrowRight,
   Eye,
   EyeOff,
-  ShieldCheck,
   AlertCircle,
 } from 'lucide-react'
 import { api, apiErrorMessage, login, registerAccount } from '../api/client'
 import { useAuth } from '../auth'
+import { useTranslation } from '../i18n'
 
 export function AuthPage({ register = false }: { register?: boolean }) {
+  const { t, locale } = useTranslation()
   const [email, setEmail] = useState('')
   const [name, setName] = useState('')
   const [password, setPassword] = useState('')
@@ -46,7 +47,9 @@ export function AuthPage({ register = false }: { register?: boolean }) {
   }
 
   const oauthError = searchParams.get('error')
-    ? 'Đăng nhập Google chưa thành công. Vui lòng kiểm tra cấu hình OAuth.'
+    ? (locale === 'en'
+        ? 'Google sign-in was not successful. Please check OAuth credentials.'
+        : 'Đăng nhập Google chưa thành công. Vui lòng kiểm tra cấu hình OAuth.')
     : ''
 
   return (
@@ -65,12 +68,10 @@ export function AuthPage({ register = false }: { register?: boolean }) {
             </div>
           </Link>
           <h1 className="auth-heading">
-            {register ? 'Tạo tài khoản du khách' : 'Chào mừng bạn trở lại'}
+            {register ? t('auth.createTravelerAccount') : t('auth.welcomeBack')}
           </h1>
           <p className="auth-subtext">
-            {register
-              ? 'Khám phá TP. Hồ Chí Minh theo nhịp đi và sở thích cá nhân của bạn'
-              : 'Đăng nhập để xem lại lịch trình đã lưu và đồng bộ trải nghiệm'}
+            {register ? t('auth.registerLead') : t('auth.welcomeLead')}
           </p>
         </div>
 
@@ -80,13 +81,13 @@ export function AuthPage({ register = false }: { register?: boolean }) {
             to="/login"
             className={`auth-tab-btn ${!register ? 'auth-tab-active' : ''}`}
           >
-            Đăng nhập
+            {t('auth.tabLogin')}
           </Link>
           <Link
             to="/register"
             className={`auth-tab-btn ${register ? 'auth-tab-active' : ''}`}
           >
-            Tạo tài khoản
+            {t('auth.tabRegister')}
           </Link>
         </div>
 
@@ -100,7 +101,7 @@ export function AuthPage({ register = false }: { register?: boolean }) {
         <form onSubmit={submit} className="auth-form-body">
           {register && (
             <div className="auth-field-group">
-              <label htmlFor="auth-name">Họ và tên</label>
+              <label htmlFor="auth-name">{t('auth.fullName')}</label>
               <div className="auth-input-shell">
                 <User size={16} className="auth-input-icon" />
                 <input
@@ -109,7 +110,7 @@ export function AuthPage({ register = false }: { register?: boolean }) {
                   minLength={2}
                   value={name}
                   onChange={(e) => setName(e.target.value)}
-                  placeholder="Ví dụ: Nguyễn Văn An"
+                  placeholder={t('auth.namePlaceholder')}
                   autoComplete="name"
                 />
               </div>
@@ -117,7 +118,7 @@ export function AuthPage({ register = false }: { register?: boolean }) {
           )}
 
           <div className="auth-field-group">
-            <label htmlFor="auth-email">Địa chỉ Email</label>
+            <label htmlFor="auth-email">{t('auth.email')}</label>
             <div className="auth-input-shell">
               <Mail size={16} className="auth-input-icon" />
               <input
@@ -134,9 +135,9 @@ export function AuthPage({ register = false }: { register?: boolean }) {
 
           <div className="auth-field-group">
             <div className="field-label-split">
-              <label htmlFor="auth-password">Mật khẩu</label>
+              <label htmlFor="auth-password">{t('auth.password')}</label>
               {register && (
-                <span className="auth-hint-text">Ít nhất 12 ký tự</span>
+                <span className="auth-hint-text">{t('auth.passMin12')}</span>
               )}
             </div>
             <div className="auth-input-shell">
@@ -148,14 +149,14 @@ export function AuthPage({ register = false }: { register?: boolean }) {
                 minLength={register ? 12 : 1}
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
-                placeholder={register ? 'Nhập mật khẩu an toàn...' : 'Nhập mật khẩu của bạn...'}
+                placeholder={register ? t('auth.passPlaceholderRegister') : t('auth.passPlaceholderLogin')}
                 autoComplete={register ? 'new-password' : 'current-password'}
               />
               <button
                 type="button"
                 className="toggle-password-btn"
                 onClick={() => setShowPassword(!showPassword)}
-                aria-label={showPassword ? 'Ẩn mật khẩu' : 'Hiện mật khẩu'}
+                aria-label={showPassword ? 'Hide password' : 'Show password'}
               >
                 {showPassword ? <EyeOff size={16} /> : <Eye size={16} />}
               </button>
@@ -163,14 +164,14 @@ export function AuthPage({ register = false }: { register?: boolean }) {
           </div>
 
           <button className="btn-auth-submit" type="submit" disabled={busy}>
-            <span>{busy ? 'Đang xác thực...' : register ? 'Tạo Tài Khoản Ngay' : 'Đăng Nhập'}</span>
+            <span>{busy ? t('auth.verifying') : register ? t('auth.createBtn') : t('auth.loginBtn')}</span>
             <ArrowRight size={17} />
           </button>
         </form>
 
         {/* Divider */}
         <div className="auth-divider-line">
-          <span>HOẶC TIẾP TỤC VỚI</span>
+          <span>{t('auth.orContinueWith')}</span>
         </div>
 
         {/* Google OAuth Button */}
@@ -178,7 +179,7 @@ export function AuthPage({ register = false }: { register?: boolean }) {
           className="google-oauth-btn"
           href={`${api.defaults.baseURL}/auth/google/start`}
         >
-          <svg className="google-icon-svg" viewBox="0 0 24 24" width="18" height="18">
+          <svg className="google-icon" viewBox="0 0 24 24" width="18" height="18">
             <path
               fill="#4285F4"
               d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"
@@ -196,21 +197,8 @@ export function AuthPage({ register = false }: { register?: boolean }) {
               d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.06l3.66 2.84c.87-2.6 3.3-4.52 6.16-4.52z"
             />
           </svg>
-          <span>Tiếp tục bằng tài khoản Google</span>
+          <span>{t('auth.googleLogin')}</span>
         </a>
-
-        {/* Footer Notes */}
-        <div className="auth-card-footer">
-          <p className="switch-auth-link">
-            {register ? 'Đã có tài khoản?' : 'Chưa có tài khoản?'}{' '}
-            <Link to={register ? '/login' : '/register'}>
-              {register ? 'Đăng nhập ngay' : 'Đăng ký miễn phí'}
-            </Link>
-          </p>
-          <span className="auth-oauth-note">
-            <ShieldCheck size={12} className="text-emerald" /> Dữ liệu được bảo mật an toàn theo tiêu chuẩn OpenID
-          </span>
-        </div>
       </div>
     </div>
   )

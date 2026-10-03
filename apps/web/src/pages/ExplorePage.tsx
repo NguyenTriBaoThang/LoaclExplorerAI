@@ -18,15 +18,7 @@ import { ExperienceCard } from '../components/experience/ExperienceCard'
 import { MapAdapter } from '../components/map/MapAdapter'
 import { SimulatedBadge } from '../components/common/StatusBadge'
 import type { Experience } from '../types'
-
-const categories = [
-  { value: '', label: 'Tất cả mục đích', icon: '✨' },
-  { value: 'food', label: 'Ẩm thực', icon: '🍜' },
-  { value: 'handicraft', label: 'Thủ công', icon: '🎨' },
-  { value: 'culture', label: 'Văn hóa', icon: '🏛️' },
-  { value: 'nature', label: 'Thiên nhiên', icon: '🌿' },
-  { value: 'relaxation', label: 'Thư giãn', icon: '🍵' },
-]
+import { useTranslation } from '../i18n'
 
 const topicSuggestions = [
   'cà phê',
@@ -47,8 +39,18 @@ const localTomorrow = () => {
 }
 
 export function ExplorePage() {
+  const { t } = useTranslation()
   const [searchParams] = useSearchParams()
   const initialIntent = searchParams.get('intent') || ''
+
+  const categories = useMemo(() => [
+    { value: '', label: t('explore.allIntents'), icon: '✨' },
+    { value: 'food', label: t('explore.intentFood'), icon: '🍜' },
+    { value: 'handicraft', label: t('explore.intentCraft'), icon: '🎨' },
+    { value: 'culture', label: t('explore.intentCulture'), icon: '🏛️' },
+    { value: 'nature', label: t('explore.intentNature'), icon: '🌿' },
+    { value: 'relaxation', label: t('explore.intentRelax'), icon: '🍵' },
+  ], [t])
 
   const [items, setItems] = useState<Experience[]>([])
   const [loading, setLoading] = useState(true)
@@ -161,13 +163,13 @@ export function ExplorePage() {
       <div className="page-title-row-3d">
         <div>
           <span className="eyebrow-3d">
-            <span className="eyebrow-dot" /> KHÁM PHÁ TP. HỒ CHÍ MINH
+            <span className="eyebrow-dot" /> {t('explore.eyebrow')}
           </span>
           <h1 className="page-heading-3d">
-            Điều gì đang chờ bạn <em>hôm nay?</em>
+            {t('explore.headingMain')} <em>{t('explore.headingHighlight')}</em>
           </h1>
           <p className="page-subtext-3d">
-            Bộ lọc thông minh giúp bạn tìm thấy trải nghiệm vừa với khung giờ rảnh, ngân sách và sở thích.
+            {t('explore.headingLead')}
           </p>
         </div>
         <div className="title-extra-badges">
@@ -199,8 +201,8 @@ export function ExplorePage() {
             onChange={(e) => setSearch(e.target.value)}
             placeholder={
               semantic
-                ? 'Mô tả ý định bằng ngôn ngữ tự nhiên (vd: muốn workshop gốm thư giãn buổi chiều)...'
-                : 'Tìm theo tên trải nghiệm, địa điểm hoặc từ khóa...'
+                ? t('explore.semanticPlaceholder')
+                : t('explore.searchPlaceholder')
             }
           />
           {search && (
@@ -208,14 +210,14 @@ export function ExplorePage() {
               type="button"
               className="clear-search-btn"
               onClick={() => setSearch('')}
-              aria-label="Xóa tìm kiếm"
+              aria-label="Clear search"
             >
               ×
             </button>
           )}
           {semantic && (
             <span className="semantic-active-badge">
-              <Zap size={12} /> E5 Vector
+              <Zap size={12} /> {t('explore.semanticActive')}
             </span>
           )}
         </div>
@@ -225,7 +227,7 @@ export function ExplorePage() {
           <div className="toolbar-input-card">
             <div className="input-card-label">
               <Calendar size={13} className="text-emerald" />
-              <span>Ngày đi</span>
+              <span>{t('explore.dateDepart')}</span>
             </div>
             <input
               type="date"
@@ -239,7 +241,7 @@ export function ExplorePage() {
           <div className="toolbar-input-card">
             <div className="input-card-label">
               <Clock size={13} className="text-amber" />
-              <span>Giờ đến</span>
+              <span>{t('explore.timeArrive')}</span>
             </div>
             <input type="time" value={time} onChange={(e) => setTime(e.target.value)} />
           </div>
@@ -248,7 +250,7 @@ export function ExplorePage() {
           <div className="toolbar-input-card">
             <div className="input-card-label">
               <Users size={13} className="text-cyan" />
-              <span>Số người</span>
+              <span>{t('explore.groupLabel')}</span>
             </div>
             <input
               type="number"
@@ -263,7 +265,7 @@ export function ExplorePage() {
           <div className="toolbar-input-card budget-card">
             <div className="input-card-label">
               <Wallet size={13} className="text-emerald" />
-              <span>Ngân sách nhóm</span>
+              <span>{t('explore.groupBudget')}</span>
             </div>
             <input
               type="number"
@@ -279,10 +281,10 @@ export function ExplorePage() {
               type="button"
               className={`advanced-toggle-btn ${showAdvanced || activeAdvancedCount > 0 ? 'advanced-btn-active' : ''}`}
               onClick={() => setShowAdvanced(!showAdvanced)}
-              title="Bộ lọc nâng cao"
+              title={t('explore.advancedFilters')}
             >
               <SlidersHorizontal size={16} />
-              <span>Lọc thêm</span>
+              <span>{t('explore.moreFilters')}</span>
               {activeAdvancedCount > 0 && (
                 <span className="advanced-count-bubble">{activeAdvancedCount}</span>
               )}
@@ -292,7 +294,7 @@ export function ExplorePage() {
               type="button"
               className="reset-filters-btn"
               onClick={resetFilters}
-              title="Đặt lại bộ lọc"
+              title={t('explore.resetFilters')}
             >
               <RotateCcw size={16} />
             </button>
@@ -306,11 +308,11 @@ export function ExplorePage() {
               {/* Topic suggestions */}
               <div className="advanced-field-col">
                 <label className="adv-label">
-                  <span>Chủ đề / Từ khóa</span>
+                  <span>{t('explore.topicsLabel')}</span>
                   <input
                     value={topic}
                     onChange={(e) => setTopic(e.target.value)}
-                    placeholder="vd: làm gốm, cà phê, thủ công..."
+                    placeholder={t('explore.topicsPlaceholder')}
                     className="adv-text-input"
                   />
                 </label>
@@ -331,7 +333,7 @@ export function ExplorePage() {
               {/* Space: Indoor / Outdoor */}
               <div className="advanced-field-col">
                 <label className="adv-label">
-                  <span>Không gian trải nghiệm</span>
+                  <span>{t('explore.indoorLabel')}</span>
                 </label>
                 <div className="segmented-control">
                   <button
@@ -339,21 +341,21 @@ export function ExplorePage() {
                     className={`seg-btn ${indoor === 'all' ? 'seg-active' : ''}`}
                     onClick={() => setIndoor('all')}
                   >
-                    Tất cả
+                    {t('explore.indoorAll')}
                   </button>
                   <button
                     type="button"
                     className={`seg-btn ${indoor === 'indoor' ? 'seg-active' : ''}`}
                     onClick={() => setIndoor('indoor')}
                   >
-                    Trong nhà
+                    {t('explore.indoorOnly')}
                   </button>
                   <button
                     type="button"
                     className={`seg-btn ${indoor === 'outdoor' ? 'seg-active' : ''}`}
                     onClick={() => setIndoor('outdoor')}
                   >
-                    Ngoài trời
+                    {t('explore.outdoorOnly')}
                   </button>
                 </div>
               </div>
@@ -361,7 +363,7 @@ export function ExplorePage() {
               {/* Distance Radius */}
               <div className="advanced-field-col">
                 <label className="adv-label">
-                  <span>Bán kính từ trung tâm Q.1: <strong>{radiusKm} km</strong></span>
+                  <span>{t('explore.radiusText', { radius: radiusKm })}</span>
                   <input
                     type="range"
                     min={1}
@@ -377,7 +379,7 @@ export function ExplorePage() {
               {/* Semantic E5 Toggle */}
               <div className="advanced-field-col">
                 <label className="adv-label">
-                  <span>Tìm kiếm AI Vector</span>
+                  <span>{t('explore.aiVectorTitle')}</span>
                 </label>
                 <label className="toggle-switch-card">
                   <input
@@ -387,7 +389,7 @@ export function ExplorePage() {
                     className="toggle-checkbox"
                   />
                   <div className="toggle-slider" />
-                  <span className="toggle-label">Mô hình E5 Semantics</span>
+                  <span className="toggle-label">{t('explore.aiVectorModel')}</span>
                 </label>
               </div>
             </div>
@@ -400,7 +402,7 @@ export function ExplorePage() {
           <Sparkles size={16} className="text-amber" />
           <span>{error}</span>
           <Link to="/planner" className="alert-link">
-            Mở planner tự động <ArrowRight size={14} />
+            {t('explore.openPlannerAuto')} <ArrowRight size={14} />
           </Link>
         </div>
       )}
@@ -411,13 +413,13 @@ export function ExplorePage() {
         <section className="results-column-3d">
           <div className="results-header-3d">
             <div>
-              <span className="results-sub">DANH SÁCH GỢI Ý</span>
+              <span className="results-sub">{t('explore.eyebrow')}</span>
               <strong className="results-count">
-                {loading ? 'Đang quét dữ liệu...' : `${visible.length} trải nghiệm phù hợp`}
+                {loading ? t('explore.scanning') : t('explore.resultsCount', { count: visible.length })}
               </strong>
             </div>
             <span className="budget-per-person">
-              Ước tính: ~{Math.floor(budget / groupSize).toLocaleString('vi-VN')}₫ / người
+              {t('explore.estPerPerson', { cost: Math.floor(budget / groupSize).toLocaleString('vi-VN') })}
             </span>
           </div>
 
@@ -425,7 +427,7 @@ export function ExplorePage() {
             {loading ? (
               <div className="loading-state-3d">
                 <span className="loader-orbit" />
-                <p>Đang quét các khung giờ trải nghiệm tại TP. Hồ Chí Minh...</p>
+                <p>{t('explore.scanning')}</p>
               </div>
             ) : visible.length > 0 ? (
               visible.map((experience) => (
@@ -439,12 +441,12 @@ export function ExplorePage() {
             ) : (
               <div className="empty-state-3d">
                 <div className="empty-icon-box">🧭</div>
-                <h3>Không tìm thấy trải nghiệm phù hợp</h3>
+                <h3>{t('explore.emptyTitle')}</h3>
                 <p>
-                  Hãy thử mở rộng khoảng thời gian, tăng bán kính tìm kiếm hoặc đặt lại bộ lọc.
+                  {t('explore.emptyDesc')}
                 </p>
                 <button type="button" className="btn-secondary-3d btn-sm" onClick={resetFilters}>
-                  <RotateCcw size={14} /> Đặt lại tất cả bộ lọc
+                  <RotateCcw size={14} /> {t('explore.resetAllFilters')}
                 </button>
               </div>
             )}
@@ -455,11 +457,11 @@ export function ExplorePage() {
         <section className="map-column-3d">
           <div className="map-panel-header-3d">
             <div>
-              <span className="map-sub">BẢN ĐỒ VỊ TRÍ</span>
-              <strong className="map-title">Phân bổ tại TP. HCM</strong>
+              <span className="map-sub">{t('explore.mapSubtitle')}</span>
+              <strong className="map-title">{t('explore.mapTitle')}</strong>
             </div>
             <span className="map-poi-counter">
-              <MapPin size={13} className="text-emerald" /> {points.length} điểm neo
+              <MapPin size={13} className="text-emerald" /> {t('explore.anchorPoints', { count: points.length })}
             </span>
           </div>
 
@@ -473,7 +475,7 @@ export function ExplorePage() {
           <div className="map-footer-caption">
             <span className="live-dot-glow" />
             <span>
-              Chọn một điểm trên bản đồ hoặc danh sách để xem chi tiết khung giờ và chi phí thực tế.
+              {t('explore.mapHint')}
             </span>
           </div>
         </section>

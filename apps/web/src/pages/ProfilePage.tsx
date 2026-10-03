@@ -14,8 +14,10 @@ import {
 import { apiErrorMessage, changePassword, getMyItineraries, updateProfile } from '../api/client'
 import { useAuth } from '../auth'
 import { TiltCard3D } from '../components/3d/TiltCard3D'
+import { useTranslation } from '../i18n'
 
 export function ProfilePage() {
+  const { t, locale } = useTranslation()
   const { user, setUser } = useAuth()
   const [name, setName] = useState(user?.display_name ?? '')
   const [phone, setPhone] = useState(user?.phone ?? '')
@@ -42,7 +44,7 @@ export function ProfilePage() {
     setSavingProfile(true)
     try {
       setUser(await updateProfile(name, phone || null))
-      setNotice('Đã cập nhật thông tin hồ sơ thành công!')
+      setNotice(t('profile.updateSuccess'))
     } catch (reason) {
       setError(apiErrorMessage(reason))
     } finally {
@@ -59,7 +61,7 @@ export function ProfilePage() {
       await changePassword(currentPassword || null, password)
       setPassword('')
       setCurrentPassword('')
-      setNotice('Đã thay đổi mật khẩu tài khoản thành công!')
+      setNotice(locale === 'en' ? 'Password updated successfully!' : 'Đã thay đổi mật khẩu tài khoản thành công!')
     } catch (reason) {
       setError(apiErrorMessage(reason))
     } finally {
@@ -68,9 +70,9 @@ export function ProfilePage() {
   }
 
   const roleLabels: Record<string, string> = {
-    traveler: 'Du khách khám phá',
-    provider: 'Cơ sở đối tác',
-    admin: 'Quản trị viên hệ thống',
+    traveler: t('profile.bannerRoleTraveler'),
+    provider: t('profile.bannerRoleProvider'),
+    admin: t('profile.bannerRoleAdmin'),
   }
 
   const userInitials = (user?.display_name || user?.email || 'U').slice(0, 2).toUpperCase()
@@ -88,18 +90,18 @@ export function ProfilePage() {
               <Shield size={12} className="text-emerald" />
               {roleLabels[user?.role || ''] || user?.role}
             </span>
-            <h1 className="profile-user-name">{user?.display_name || 'Người dùng'}</h1>
+            <h1 className="profile-user-name">{user?.display_name || (locale === 'en' ? 'User' : 'Người dùng')}</h1>
             <p className="profile-user-email">{user?.email}</p>
           </div>
         </div>
 
         <div className="profile-quick-stats">
           <div className="profile-stat-box">
-            <small>LỊCH TRÌNH ĐÃ LƯU</small>
+            <small>{t('profile.savedTripsKpi')}</small>
             <strong>{trips.length}</strong>
           </div>
           <Link to="/planner" className="btn-primary-3d btn-sm">
-            <span>Tạo lịch mới</span>
+            <span>{t('profile.createNewTrip')}</span>
             <ArrowRight size={14} />
           </Link>
         </div>
@@ -130,24 +132,24 @@ export function ProfilePage() {
                 <User size={18} />
               </div>
               <div>
-                <h2>Thông tin cá nhân</h2>
-                <p>Cập nhật tên hiển thị và số điện thoại liên lạc.</p>
+                <h2>{t('profile.personalInfoTitle')}</h2>
+                <p>{t('profile.personalInfoDesc')}</p>
               </div>
             </div>
 
             <form onSubmit={save} className="profile-form">
               <div className="field-group-3d">
-                <span>Họ và tên hiển thị</span>
+                <span>{t('profile.nameLabel')}</span>
                 <input
                   required
                   value={name}
                   onChange={(e) => setName(e.target.value)}
-                  placeholder="Nhập họ và tên..."
+                  placeholder={locale === 'en' ? 'Enter display name...' : 'Nhập họ và tên...'}
                 />
               </div>
 
               <div className="field-group-3d">
-                <span>Số điện thoại (tùy chọn)</span>
+                <span>{t('profile.phoneLabel')}</span>
                 <input
                   type="tel"
                   value={phone}
@@ -157,7 +159,7 @@ export function ProfilePage() {
               </div>
 
               <button className="btn-primary-3d" type="submit" disabled={savingProfile}>
-                <span>{savingProfile ? 'Đang lưu...' : 'Lưu Thay Đổi'}</span>
+                <span>{savingProfile ? t('profile.saving') : t('profile.saveChanges')}</span>
               </button>
             </form>
           </section>
@@ -169,36 +171,36 @@ export function ProfilePage() {
                 <Lock size={18} />
               </div>
               <div>
-                <h2>Đổi mật khẩu</h2>
-                <p>Cập nhật mật khẩu để bảo vệ tài khoản của bạn.</p>
+                <h2>{t('profile.changePassTitle')}</h2>
+                <p>{t('profile.changePassDesc')}</p>
               </div>
             </div>
 
             <form onSubmit={savePassword} className="profile-form">
               <div className="field-group-3d">
-                <span>Mật khẩu hiện tại (để trống nếu đăng nhập Google)</span>
+                <span>{t('profile.currentPassHint')}</span>
                 <input
                   type="password"
                   value={currentPassword}
                   onChange={(e) => setCurrentPassword(e.target.value)}
-                  placeholder="Nhập mật khẩu hiện tại..."
+                  placeholder={locale === 'en' ? 'Current password...' : 'Nhập mật khẩu hiện tại...'}
                 />
               </div>
 
               <div className="field-group-3d">
-                <span>Mật khẩu mới (ít nhất 12 ký tự)</span>
+                <span>{t('profile.newPassLabel')}</span>
                 <input
                   required
                   minLength={12}
                   type="password"
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
-                  placeholder="Nhập mật khẩu mới..."
+                  placeholder={locale === 'en' ? 'New secure password...' : 'Nhập mật khẩu mới...'}
                 />
               </div>
 
               <button className="btn-secondary-3d" type="submit" disabled={savingPassword}>
-                <span>{savingPassword ? 'Đang cập nhật...' : 'Cập Nhật Mật Khẩu'}</span>
+                <span>{savingPassword ? t('profile.saving') : t('profile.changePassTitle')}</span>
               </button>
             </form>
           </section>
@@ -208,13 +210,13 @@ export function ProfilePage() {
         <section className="profile-trips-col">
           <div className="trips-section-header">
             <div>
-              <span className="results-sub">BỘ SƯU TẬP CỦA BẠN</span>
-              <h2 className="trips-main-title">Lịch trình đã tạo</h2>
+              <span className="results-sub">{locale === 'en' ? 'YOUR COLLECTION' : 'BỘ SƯU TẬP CỦA BẠN'}</span>
+              <h2 className="trips-main-title">{t('profile.savedTrips')}</h2>
             </div>
             {trips.length >= 2 && (
               <Link to="/compare" className="btn-compare-shortcut">
                 <GitCompare size={15} />
-                <span>So sánh các phương án</span>
+                <span>{t('nav.compare')}</span>
               </Link>
             )}
           </div>
@@ -226,23 +228,23 @@ export function ProfilePage() {
                   <div className="trip-card-top">
                     <span className="trip-date-badge">
                       <Calendar size={13} className="text-emerald" />
-                      {trip.planned_date || 'Chưa ấn định ngày'}
+                      {trip.planned_date || (locale === 'en' ? 'Date unassigned' : 'Chưa ấn định ngày')}
                     </span>
                     <span className="trip-status-chip">
-                      {trip.status === 'confirmed' ? 'Đã xác nhận' : 'Bản nháp tối ưu'}
+                      {trip.status === 'confirmed' ? (locale === 'en' ? 'Confirmed' : 'Đã xác nhận') : (locale === 'en' ? 'Optimized Draft' : 'Bản nháp tối ưu')}
                     </span>
                   </div>
 
-                  <h3 className="trip-card-id">Lịch trình #{trip.id.slice(0, 8)}</h3>
+                  <h3 className="trip-card-id">{locale === 'en' ? 'Itinerary' : 'Lịch trình'} #{trip.id.slice(0, 8)}</h3>
 
                   <div className="trip-card-cost">
-                    <small>Chi phí dự kiến</small>
+                    <small>{locale === 'en' ? 'Estimated cost' : 'Chi phí dự kiến'}</small>
                     <strong>{trip.estimated_cost_vnd.toLocaleString('vi-VN')}₫</strong>
                   </div>
 
                   <div className="trip-card-actions">
                     <Link to={`/itinerary/${trip.id}`} className="btn-view-trip">
-                      <span>Xem chi tiết</span>
+                      <span>{locale === 'en' ? 'View Details' : 'Xem chi tiết'}</span>
                       <ArrowRight size={14} />
                     </Link>
                   </div>
@@ -252,13 +254,14 @@ export function ProfilePage() {
           ) : (
             <div className="empty-trips-box">
               <Route size={36} className="text-slate-500 mb-3" />
-              <h3>Chưa có lịch trình nào được lưu</h3>
+              <h3>{locale === 'en' ? 'No saved itineraries yet' : 'Chưa có lịch trình nào được lưu'}</h3>
               <p>
-                Hãy bắt đầu tạo lịch trình đầu tiên để khám phá các khung giờ trải nghiệm độc đáo
-                tại Sài Gòn.
+                {locale === 'en'
+                  ? 'Start by creating your first itinerary to discover unique time-slot aware experiences across Saigon.'
+                  : 'Hãy bắt đầu tạo lịch trình đầu tiên để khám phá các khung giờ trải nghiệm độc đáo tại Sài Gòn.'}
               </p>
               <Link to="/planner" className="btn-primary-3d btn-sm">
-                <span>Tạo lịch trình ngay</span>
+                <span>{t('planner.submitBtn')}</span>
                 <ArrowRight size={14} />
               </Link>
             </div>

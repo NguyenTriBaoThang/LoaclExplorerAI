@@ -1,70 +1,79 @@
 import { ArrowRight, Compass, MapPin, ShieldCheck, Sparkles, Cpu, Clock3 } from 'lucide-react'
 import { Link } from 'react-router-dom'
 import { TiltCard3D } from '../components/3d/TiltCard3D'
-
-const concepts = [
-  {
-    num: '01',
-    kicker: 'NƠI CHỐN VẬT LÝ',
-    title: 'POI (Point of Interest)',
-    desc: 'Điểm tọa độ địa lý trên bản đồ (Latitude, Longitude). Đây là nền tảng không gian để neo giữ các hoạt động thực tế.',
-    icon: MapPin,
-    color: 'text-emerald-500',
-    tags: ['Tọa độ', 'Địa chỉ', 'Khu vực'],
-  },
-  {
-    num: '02',
-    kicker: 'HOẠT ĐỘNG CỤ THỂ',
-    title: 'Experience (Trải nghiệm)',
-    desc: 'Hành động cụ thể bạn tham gia tại địa điểm: vẽ gốm, nếm cà phê bít tất, làm giấy dó. Gắn liền với thời lượng và chi phí.',
-    icon: Sparkles,
-    color: 'text-amber-500',
-    tags: ['Thời lượng', 'Ngân sách', 'Mục đích'],
-  },
-  {
-    num: '03',
-    kicker: 'THỜI ĐIỂM KHẢ THI',
-    title: 'Slot (Khung giờ)',
-    desc: 'Khung giờ độc lập có sức chứa riêng và trạng thái chỗ trống. Quyết định trực tiếp bạn có thể tham gia vào lúc bạn đến hay không.',
-    icon: Clock3,
-    color: 'text-cyan-500',
-    tags: ['Giờ bắt đầu', 'Sức chứa', 'Xác nhận'],
-  },
-  {
-    num: '04',
-    kicker: 'TỐI ƯU HÓA TỔNG THỂ',
-    title: 'Itinerary (Lịch trình 3D)',
-    desc: 'Chuỗi trải nghiệm được thuật toán Heuristic sắp xếp khoa học, cân đối thời gian di chuyển giữa các quận và sức bền của nhóm.',
-    icon: Compass,
-    color: 'text-rose-500',
-    tags: ['Heuristic', 'Lộ trình', 'Ma trận cự ly'],
-  },
-]
+import { useTranslation } from '../i18n'
 
 export function AboutPage() {
+  const { t, locale } = useTranslation()
+
+  const concepts = [
+    {
+      num: '01',
+      kicker: locale === 'en' ? 'PHYSICAL VENUES' : 'NƠI CHỐN VẬT LÝ',
+      title: 'POI (Point of Interest)',
+      desc: locale === 'en'
+        ? 'Geographic map coordinates (Latitude, Longitude). The spatial foundation anchoring all real-world experiences.'
+        : 'Điểm tọa độ địa lý trên bản đồ (Latitude, Longitude). Đây là nền tảng không gian để neo giữ các hoạt động thực tế.',
+      icon: MapPin,
+      color: 'text-emerald-500',
+      tags: locale === 'en' ? ['Coordinates', 'Address', 'District'] : ['Tọa độ', 'Địa chỉ', 'Khu vực'],
+    },
+    {
+      num: '02',
+      kicker: locale === 'en' ? 'SPECIFIC ACTIVITY' : 'HOẠT ĐỘNG CỤ THỂ',
+      title: locale === 'en' ? 'Experience' : 'Trải nghiệm',
+      desc: locale === 'en'
+        ? 'The concrete activity you participate in: pottery wheel, heritage sock coffee tasting, handmade paper craft. Bound to duration and cost.'
+        : 'Hành động cụ thể bạn tham gia tại địa điểm: vẽ gốm, nếm cà phê bít tất, làm giấy dó. Gắn liền với thời lượng và chi phí.',
+      icon: Sparkles,
+      color: 'text-amber-500',
+      tags: locale === 'en' ? ['Duration', 'Budget', 'Purpose'] : ['Thời lượng', 'Ngân sách', 'Mục đích'],
+    },
+    {
+      num: '03',
+      kicker: locale === 'en' ? 'FEASIBLE TIMING' : 'THỜI ĐIỂM KHẢ THI',
+      title: locale === 'en' ? 'Timeslot (Slot)' : 'Slot (Khung giờ)',
+      desc: locale === 'en'
+        ? 'Discrete time windows with specific capacity and live vacancy. Decides whether you can actually participate upon arrival.'
+        : 'Khung giờ độc lập có sức chứa riêng và trạng thái chỗ trống. Quyết định trực tiếp bạn có thể tham gia vào lúc bạn đến hay không.',
+      icon: Clock3,
+      color: 'text-cyan-500',
+      tags: locale === 'en' ? ['Start Time', 'Capacity', 'Verification'] : ['Giờ bắt đầu', 'Sức chứa', 'Xác nhận'],
+    },
+    {
+      num: '04',
+      kicker: locale === 'en' ? 'HOLISTIC OPTIMIZATION' : 'TỐI ƯU HÓA TỔNG THỂ',
+      title: locale === 'en' ? '3D Itinerary' : 'Lịch trình 3D',
+      desc: locale === 'en'
+        ? 'A sequence of experiences organized by deterministic Heuristic algorithms, balancing inter-district travel times and group energy.'
+        : 'Chuỗi trải nghiệm được thuật toán Heuristic sắp xếp khoa học, cân đối thời gian di chuyển giữa các quận và sức bền của nhóm.',
+      icon: Compass,
+      color: 'text-rose-500',
+      tags: locale === 'en' ? ['Heuristic', 'Transit Route', 'Distance Matrix'] : ['Heuristic', 'Lộ trình', 'Ma trận cự ly'],
+    },
+  ]
+
   return (
     <div className="about-page-3d page-wrap">
       {/* Hero Section */}
       <div className="about-hero-3d">
         <span className="eyebrow-3d">
-          <span className="eyebrow-dot" /> TƯ DUY THIẾT KẾ MỚI CHO DU LỊCH
+          <span className="eyebrow-dot" /> {t('about.eyebrow')}
         </span>
         <h1 className="about-hero-title">
-          Bản đồ chỉ là khởi đầu. <br />
-          <em>Trải nghiệm mới là đích đến.</em>
+          {t('about.heroTitle1')} <br />
+          <em>{t('about.heroTitle2')}</em>
         </h1>
         <p className="about-hero-lead">
-          Local Explorer AI ra đời từ một quan sát thực tế: Một địa điểm mở cửa không đồng nghĩa với
-          việc bạn có thể tham gia hoạt động vào thời điểm mình đến. Kế hoạch tốt phải hiểu được
-          khung giờ thật của từng trải nghiệm.
+          {t('about.heroLead')}
         </p>
       </div>
 
       {/* Core Architectural Model Grid */}
       <div className="about-concept-section">
         <div className="section-header-center">
-          <span className="section-eyebrow">KIẾN TRÚC MÔ HÌNH DỮ LIỆU</span>
-          <h2 className="section-title-3d">Từ Tọa độ Bản đồ đến Lịch trình Hoàn chỉnh</h2>
+          <span className="section-eyebrow">{t('about.dataModelEyebrow')}</span>
+          <h2 className="section-title-3d">{t('about.dataModelTitle')}</h2>
         </div>
 
         <div className="concept-grid-3d">
@@ -103,13 +112,9 @@ export function AboutPage() {
             <Cpu size={32} className="text-emerald" />
           </div>
           <div className="eng-content">
-            <span className="results-sub">TRIẾT LÝ CÔNG NGHỆ</span>
-            <h3>Heuristic Planner độc lập — Không ảo tưởng (Hallucination-free)</h3>
-            <p>
-              Khác với các chatbot LLM tự do thường hay “vẽ” ra các địa điểm không có thật hoặc gợi ý
-              thời gian phi thực tế, Local Explorer AI sử dụng thuật toán sắp xếp Heuristic toán học
-              chính xác trên cơ sở dữ liệu khung giờ có cấu trúc.
-            </p>
+            <span className="results-sub">{t('about.techPhilosophy')}</span>
+            <h3>{t('about.heuristicTitle')}</h3>
+            <p>{t('about.heuristicDesc')}</p>
           </div>
         </div>
 
@@ -118,13 +123,9 @@ export function AboutPage() {
             <ShieldCheck size={32} className="text-amber" />
           </div>
           <div className="eng-content">
-            <span className="results-sub">MINH BẠCH & TRÁCH NHIỆM</span>
-            <h3>Rõ ràng về độ chắc chắn của dữ liệu</h3>
-            <p>
-              Dữ liệu demo được gắn nhãn mô phỏng. Những khung giờ chưa có báo cáo chỗ trống sẽ được
-              đánh dấu <em>“cần xác nhận”</em> để du khách chủ động liên lạc, không ngộ nhận thành hết chỗ
-              hoặc chắc chắn còn chỗ.
-            </p>
+            <span className="results-sub">{t('about.transparencyEyebrow')}</span>
+            <h3>{t('about.certaintyTitle')}</h3>
+            <p>{t('about.certaintyDesc')}</p>
           </div>
         </div>
       </div>
@@ -137,11 +138,11 @@ export function AboutPage() {
             <Compass size={28} className="text-emerald-300" />
           </div>
           <div>
-            <h2>Trải nghiệm ngay thuật toán lên lịch 3D</h2>
-            <p>Chỉ mất 30 giây để có một lịch trình phù hợp cho ngày rảnh rỗi của bạn.</p>
+            <h2>{t('about.ctaTitle')}</h2>
+            <p>{t('about.ctaSub')}</p>
           </div>
           <Link to="/planner" className="btn-primary-3d">
-            <span>Bắt đầu ngay</span>
+            <span>{t('about.ctaBtn')}</span>
             <ArrowRight size={17} />
           </Link>
         </div>

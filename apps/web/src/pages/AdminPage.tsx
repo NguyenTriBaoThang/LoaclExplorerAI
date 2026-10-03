@@ -14,6 +14,7 @@ import {
 } from 'lucide-react'
 import { adminApi } from '../api/client'
 import { TiltCard3D } from '../components/3d/TiltCard3D'
+import { useTranslation } from '../i18n'
 
 type QueueItem = {
   id: string
@@ -32,6 +33,7 @@ type DuplicatePair = {
 type TabKey = 'queue' | 'duplicates' | 'providers' | 'users' | 'audit'
 
 export function AdminPage() {
+  const { t } = useTranslation()
   const [dashboard, setDashboard] = useState<Record<string, number>>({})
   const [users, setUsers] = useState<
     Array<{
@@ -248,7 +250,7 @@ export function AdminPage() {
           onClick={() => setActiveTab('queue')}
         >
           <Layers size={15} />
-          <span>Hàng chờ duyệt</span>
+          <span>{t('admin.tabQueue')}</span>
           {queueTotal > 0 && <span className="admin-tab-badge">{queueTotal}</span>}
         </button>
 
@@ -258,7 +260,7 @@ export function AdminPage() {
           onClick={() => setActiveTab('duplicates')}
         >
           <GitMerge size={15} />
-          <span>POI có thể trùng</span>
+          <span>{t('admin.tabDuplicates')}</span>
           {duplicates.length > 0 && (
             <span className="admin-tab-badge badge-warn">{duplicates.length}</span>
           )}
@@ -270,7 +272,7 @@ export function AdminPage() {
           onClick={() => setActiveTab('providers')}
         >
           <Building size={15} />
-          <span>Tạo cơ sở đối tác</span>
+          <span>{t('admin.tabProviders')}</span>
         </button>
 
         <button
@@ -279,7 +281,7 @@ export function AdminPage() {
           onClick={() => setActiveTab('users')}
         >
           <Users size={15} />
-          <span>Tài khoản & Vai trò ({users.length})</span>
+          <span>{t('admin.tabUsers')} ({users.length})</span>
         </button>
 
         <button
@@ -288,7 +290,7 @@ export function AdminPage() {
           onClick={() => setActiveTab('audit')}
         >
           <History size={15} />
-          <span>Nhật ký kiểm toán ({audit.length})</span>
+          <span>{t('admin.tabAudit')} ({audit.length})</span>
         </button>
       </div>
 

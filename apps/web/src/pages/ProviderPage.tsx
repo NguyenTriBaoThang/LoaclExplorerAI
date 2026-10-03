@@ -16,17 +16,20 @@ import { apiErrorMessage, getExperiences } from '../api/client'
 import { SimulatedBadge } from '../components/common/StatusBadge'
 import { TiltCard3D } from '../components/3d/TiltCard3D'
 import type { Experience } from '../types'
+import { useTranslation } from '../i18n'
 
 const today = () =>
   new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Ho_Chi_Minh' }).format(new Date())
-const hour = (value: string) =>
-  new Intl.DateTimeFormat('vi-VN', {
+
+const hour = (value: string, locale: string) =>
+  new Intl.DateTimeFormat(locale === 'en' ? 'en-US' : 'vi-VN', {
     hour: '2-digit',
     minute: '2-digit',
     timeZone: 'Asia/Ho_Chi_Minh',
   }).format(new Date(value))
 
 export function ProviderPage() {
+  const { t, locale } = useTranslation()
   const [experiences, setExperiences] = useState<Experience[]>([])
   const [error, setError] = useState('')
   const [selected, setSelected] = useState('')
@@ -59,22 +62,21 @@ export function ProviderPage() {
         <div className="banner-content-row">
           <div>
             <span className="eyebrow-3d text-emerald-300">
-              <span className="eyebrow-dot bg-emerald-400" /> CỔNG THÔNG TIN ĐỐI TÁC
+              <span className="eyebrow-dot bg-emerald-400" /> {locale === 'en' ? 'LOCAL PROVIDER PORTAL' : 'CỔNG THÔNG TIN ĐỐI TÁC'}
             </span>
             <h1 className="provider-banner-title">
-              Trải nghiệm của bạn, <br />
-              <em>được lên kế hoạch tốt hơn.</em>
+              {locale === 'en' ? 'Your experiences,' : 'Trải nghiệm của bạn,'} <br />
+              <em>{locale === 'en' ? 'better scheduled & discovered.' : 'được lên kế hoạch tốt hơn.'}</em>
             </h1>
             <p className="provider-banner-sub">
-              Cập nhật khung giờ (slot), thông báo sức chứa và đưa hoạt động đặc sắc của bạn đến
-              đúng những du khách có nhu cầu vào đúng thời điểm.
+              {t('provider.subtitle')}
             </p>
           </div>
           <div className="banner-badge-mark">
             <div className="mark-circle">
               <CalendarClock size={36} className="text-emerald-400" />
             </div>
-            <span>WORKSPACE ĐỐI TÁC 3D</span>
+            <span>{locale === 'en' ? '3D PARTNER WORKSPACE' : 'WORKSPACE ĐỐI TÁC 3D'}</span>
           </div>
         </div>
       </div>
@@ -82,51 +84,51 @@ export function ProviderPage() {
       {/* 3D KPI Metrics Cards */}
       <div className="provider-stats-grid">
         <TiltCard3D maxTilt={6} className="provider-stat-card">
-          <span className="stat-label">TRẢI NGHIỆM ĐANG MỞ</span>
+          <span className="stat-label">{t('provider.activeOpen')}</span>
           <div className="stat-main">
             <strong>{experiences.length}</strong>
             <span className="stat-pill-ok">
-              <CircleCheck size={13} /> Sẵn sàng
+              <CircleCheck size={13} /> {t('provider.ready')}
             </span>
           </div>
-          <small>Hoạt động có khung giờ hôm nay</small>
+          <small>{t('provider.todayActivities')}</small>
         </TiltCard3D>
 
         <TiltCard3D maxTilt={6} className="provider-stat-card">
-          <span className="stat-label">TỔNG KHUNG GIỜ (SLOTS)</span>
+          <span className="stat-label">{t('provider.totalSlots')}</span>
           <div className="stat-main">
             <strong>{slotCount}</strong>
             <span className="stat-pill-info">
-              <Clock3 size={13} /> Thời gian thực
+              <Clock3 size={13} /> {t('provider.realtime')}
             </span>
           </div>
-          <small>Số slot được mô phỏng trong ngày</small>
+          <small>{t('provider.simulatedInDay')}</small>
         </TiltCard3D>
 
         <TiltCard3D maxTilt={6} className="provider-stat-card">
-          <span className="stat-label">CẦN XÁC NHẬN SỨC CHỨA</span>
+          <span className="stat-label">{t('provider.needsCapacityConfirm')}</span>
           <div className="stat-main">
             <strong className="text-amber">{uncertain}</strong>
             <span className="stat-pill-warn">
-              <CircleAlert size={13} /> Chờ đối tác
+              <CircleAlert size={13} /> {t('provider.awaitingPartner')}
             </span>
           </div>
-          <small>Khung giờ chưa rõ số chỗ còn lại</small>
+          <small>{t('provider.unclearRemaining')}</small>
         </TiltCard3D>
       </div>
 
       {/* Table Header & Search */}
       <div className="table-controls-bar">
         <div>
-          <span className="results-sub">QUẢN LÝ DANH MỤC TRẢI NGHIỆM</span>
-          <h2 className="table-heading-title">Danh sách hoạt động & Khung giờ</h2>
+          <span className="results-sub">{locale === 'en' ? 'MANAGE EXPERIENCES CATALOG' : 'QUẢN LÝ DANH MỤC TRẢI NGHIỆM'}</span>
+          <h2 className="table-heading-title">{t('provider.tableHeading')}</h2>
         </div>
 
         <div className="table-actions-group">
           <div className="table-search-box">
             <Search size={15} />
             <input
-              placeholder="Lọc hoạt động..."
+              placeholder={t('provider.filterActivities')}
               value={searchTerm}
               onChange={(e) => setSearchTerm(e.target.value)}
             />
@@ -137,12 +139,14 @@ export function ProviderPage() {
             type="button"
             onClick={() =>
               window.alert(
-                'Tính năng thêm mới hoạt động sẽ được kích hoạt sau khi đăng nhập tài khoản nhà cung cấp.'
+                locale === 'en'
+                  ? 'Adding experiences will be activated after signing in with a provider account.'
+                  : 'Tính năng thêm mới hoạt động sẽ được kích hoạt sau khi đăng nhập tài khoản nhà cung cấp.'
               )
             }
           >
             <Plus size={15} />
-            <span>Thêm trải nghiệm</span>
+            <span>{t('provider.addExperience')}</span>
           </button>
         </div>
       </div>
@@ -152,11 +156,11 @@ export function ProviderPage() {
       {/* 3D Modern Table */}
       <div className="provider-table-card-3d">
         <div className="table-header-row">
-          <span>TRẢI NGHIỆM & ĐỊA ĐIỂM</span>
-          <span>KHUNG GIỜ TIẾP THEO</span>
-          <span>SỨC CHỨA</span>
-          <span>TRẠNG THÁI</span>
-          <span>HÀNH ĐỘNG</span>
+          <span>{locale === 'en' ? 'EXPERIENCE & VENUE' : 'TRẢI NGHIỆM & ĐỊA ĐIỂM'}</span>
+          <span>{locale === 'en' ? 'NEXT SLOT' : 'KHUNG GIỜ TIẾP THEO'}</span>
+          <span>{locale === 'en' ? 'CAPACITY' : 'SỨC CHỨA'}</span>
+          <span>{locale === 'en' ? 'STATUS' : 'TRẠNG THÁI'}</span>
+          <span>{locale === 'en' ? 'ACTIONS' : 'HÀNH ĐỘNG'}</span>
         </div>
 
         <div className="table-rows-container">
@@ -164,8 +168,8 @@ export function ProviderPage() {
             const slot = experience.slots[0]
             const capacity =
               slot?.available_reported == null
-                ? 'Chưa xác nhận'
-                : `${slot.available_reported} chỗ trống`
+                ? (locale === 'en' ? 'Unconfirmed' : 'Chưa xác nhận')
+                : (locale === 'en' ? `${slot.available_reported} open seats` : `${slot.available_reported} chỗ trống`)
             const isOpen = selected === experience.id
 
             return (
@@ -189,17 +193,17 @@ export function ProviderPage() {
                     {slot ? (
                       <>
                         <strong>
-                          {hour(slot.start_at)} – {hour(slot.end_at)}
+                          {hour(slot.start_at, locale)} – {hour(slot.end_at, locale)}
                         </strong>
                         <small>
-                          {new Intl.DateTimeFormat('vi-VN', {
+                          {new Intl.DateTimeFormat(locale === 'en' ? 'en-US' : 'vi-VN', {
                             dateStyle: 'medium',
                             timeZone: 'Asia/Ho_Chi_Minh',
                           }).format(new Date(slot.start_at))}
                         </small>
                       </>
                     ) : (
-                      <span className="text-muted">Chưa có slot</span>
+                      <span className="text-muted">{locale === 'en' ? 'No slot scheduled' : 'Chưa có slot'}</span>
                     )}
                   </div>
 
@@ -215,7 +219,7 @@ export function ProviderPage() {
                   <div className="col-action">
                     <button type="button" className="btn-table-inspect">
                       {isOpen ? <ChevronUp size={16} /> : <ChevronDown size={16} />}
-                      <span>{isOpen ? 'Đóng' : 'Xem'}</span>
+                      <span>{isOpen ? (locale === 'en' ? 'Close' : 'Đóng') : (locale === 'en' ? 'View' : 'Xem')}</span>
                     </button>
                   </div>
                 </div>
@@ -224,22 +228,22 @@ export function ProviderPage() {
                   <div className="row-expanded-panel">
                     <p className="exp-full-desc">{experience.description}</p>
                     <div className="exp-extra-info">
-                      <span>Thời lượng: {experience.duration_min} phút</span>
+                      <span>{locale === 'en' ? `Duration: ${experience.duration_min} mins` : `Thời lượng: ${experience.duration_min} phút`}</span>
                       <span>
-                        Giá demo: {experience.price_vnd.toLocaleString('vi-VN')}₫ / người
+                        {locale === 'en' ? `Demo price: ${experience.price_vnd.toLocaleString('vi-VN')}₫ / person` : `Giá demo: ${experience.price_vnd.toLocaleString('vi-VN')}₫ / người`}
                       </span>
-                      <span>Địa chỉ: {experience.poi.address}</span>
+                      <span>{locale === 'en' ? `Address: ${experience.poi.address}` : `Địa chỉ: ${experience.poi.address}`}</span>
                     </div>
                     <button
                       type="button"
                       className="btn-edit-action"
                       onClick={(e) => {
                         e.stopPropagation()
-                        window.alert('Tính năng chỉnh sửa yêu cầu phân quyền quản trị viên.')
+                        window.alert(locale === 'en' ? 'Editing requires provider role permission.' : 'Tính năng chỉnh sửa yêu cầu phân quyền quản trị viên.')
                       }}
                     >
                       <Pencil size={13} />
-                      <span>Chỉnh sửa thông tin trải nghiệm</span>
+                      <span>{locale === 'en' ? 'Edit Experience Details' : 'Chỉnh sửa thông tin trải nghiệm'}</span>
                     </button>
                   </div>
                 )}
@@ -250,15 +254,16 @@ export function ProviderPage() {
           {!filtered.length && !error && (
             <div className="empty-table-state">
               <Compass size={24} className="text-emerald" />
-              <span>Không tìm thấy hoạt động phù hợp với từ khóa.</span>
+              <span>{locale === 'en' ? 'No experiences match your search query.' : 'Không tìm thấy hoạt động phù hợp với từ khóa.'}</span>
             </div>
           )}
         </div>
       </div>
 
       <p className="provider-disclaimer">
-        Bảng quản trị đối tác trong phiên bản hiện tại là giao diện trình diễn quy trình cập nhật
-        khung giờ và sức chứa. Xác thực tài khoản đa yếu tố sẽ được tích hợp trong giai đoạn tiếp theo.
+        {locale === 'en'
+          ? 'Provider workspace in current version is an interactive demonstration of real-time slot and capacity management.'
+          : 'Bảng quản trị đối tác trong phiên bản hiện tại là giao diện trình diễn quy trình cập nhật khung giờ và sức chứa. Xác thực tài khoản đa yếu tố sẽ được tích hợp trong giai đoạn tiếp theo.'}
       </p>
     </div>
   )

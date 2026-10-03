@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react'
 import * as THREE from 'three'
 import { Sparkles, Compass, Eye, Sun, Moon } from 'lucide-react'
 import { useTheme } from '../../theme'
+import { useTranslation } from '../../i18n'
 
 interface HoveredPoint {
   name: string
@@ -16,6 +17,7 @@ export function CityHero3D() {
   const containerRef = useRef<HTMLDivElement>(null)
   const [hoveredPoint, setHoveredPoint] = useState<HoveredPoint | null>(null)
   const theme = useTheme()
+  const { t } = useTranslation()
   const [themeMode, setThemeMode] = useState<'night' | 'day'>(theme === 'light' ? 'day' : 'night')
   // Follow the global theme; the Moon/Sun buttons still override locally.
   useEffect(() => setThemeMode(theme === 'light' ? 'day' : 'night'), [theme])
@@ -357,14 +359,15 @@ export function CityHero3D() {
         <div className="district-pill">
           <span className="pulse-beacon" />
           <Compass size={14} className="icon-emerald" />
-          <span>TP. HỒ CHÍ MINH · <strong>{activeDistrict}</strong></span>
+          <span>{t('city3d.city')} · <strong>{activeDistrict}</strong></span>
         </div>
         <div className="view-mode-controls">
           <button
             type="button"
             className={`mode-btn ${themeMode === 'night' ? 'mode-active' : ''}`}
             onClick={() => setThemeMode('night')}
-            title="Giao diện Đêm Neon"
+            title={t('city3d.modeNight')}
+            aria-label={t('city3d.modeNight')}
           >
             <Moon size={14} />
           </button>
@@ -372,7 +375,8 @@ export function CityHero3D() {
             type="button"
             className={`mode-btn ${themeMode === 'day' ? 'mode-active' : ''}`}
             onClick={() => setThemeMode('day')}
-            title="Giao diện Ban Ngày"
+            title={t('city3d.modeDay')}
+            aria-label={t('city3d.modeDay')}
           >
             <Sun size={14} />
           </button>
@@ -404,13 +408,13 @@ export function CityHero3D() {
       <div className="hero-3d-floating-stats">
         <div className="stat-capsule">
           <Eye size={13} className="text-emerald" />
-          <span>Mô hình 3D tương tác · Rê chuột để xoay góc nhìn</span>
+          <span>{t('city3d.floatingStats')}</span>
         </div>
       </div>
 
       <div className="hero-3d-bottom-badge">
         <span className="hero-lat-lng">10°46'37" N · 106°42'04" E</span>
-        <span className="hero-tech-label">WEBGL 3D DIGITAL TWIN</span>
+        <span className="hero-tech-label">{t('city3d.digitalTwin')}</span>
       </div>
     </div>
   )

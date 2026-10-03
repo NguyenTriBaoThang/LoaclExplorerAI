@@ -9,79 +9,103 @@ import {
   Clock,
   Coins,
   MapPin,
+  Bot,
 } from 'lucide-react'
 import { Link } from 'react-router-dom'
 import { CityHero3D } from '../components/3d/CityHero3D'
 import { TiltCard3D } from '../components/3d/TiltCard3D'
-
-const categories = [
-  { id: 'food', name: 'Ẩm thực Sài Gòn', icon: '🍜', desc: 'Bếp món Nam Bộ, cà phê vợt hẻm xưa, bánh dân gian', color: 'from-orange-500/20 to-amber-500/20' },
-  { id: 'handicraft', name: 'Thủ công mỹ nghệ', icon: '🎨', desc: 'Sổ tay giấy dó, bàn xoay gốm sứ, nước hoa thảo mộc', color: 'from-amber-500/20 to-yellow-500/20' },
-  { id: 'culture', name: 'Di sản & Văn hóa', icon: '🏛️', desc: 'Triển lãm ảnh ký sự, bảo tàng nghệ thuật, kiến trúc cổ', color: 'from-emerald-500/20 to-teal-500/20' },
-  { id: 'nature', name: 'Thiên nhiên & Thư giãn', icon: '🌿', desc: 'Hoàng hôn sông Sài Gòn, vườn cổ thụ, thiền chuông xoay', color: 'from-teal-500/20 to-cyan-500/20' },
-]
-
-const highlights = [
-  {
-    number: '01',
-    title: 'Biết khung giờ thực tế',
-    copy: 'Một địa điểm mở cửa không có nghĩa trải nghiệm đang diễn ra. Chúng tôi chỉ đề xuất khi có khung giờ bạn tham gia được.',
-    icon: CalendarCheck,
-  },
-  {
-    number: '02',
-    title: 'Vừa sức & Ngân sách nhóm',
-    copy: 'Thuật toán tính toán thời lượng từng hoạt động, chi phí chia đều theo đầu người và thời gian di chuyển thực tế giữa các quận.',
-    icon: Navigation,
-  },
-  {
-    number: '03',
-    title: 'Minh bạch độ chắc chắn',
-    copy: 'Chỗ nào đã xác nhận, chỗ nào cần gọi trước đều được đánh dấu rõ ràng (Tentative vs Available), không gây ngộ nhận.',
-    icon: ShieldCheck,
-  },
-]
-
-const curatedExperiences = [
-  {
-    title: 'Góc thủ công giấy Dó Sài Gòn',
-    district: 'Quận 1',
-    category: 'Thủ công',
-    duration: '75 phút',
-    price: '120.000₫',
-    time: '09:00 - 10:15',
-    icon: '🎨',
-  },
-  {
-    title: 'Bàn trải nghiệm gốm Sài Gòn',
-    district: 'Quận 3',
-    category: 'Thủ công',
-    duration: '90 phút',
-    price: '180.000₫',
-    time: '10:00 - 11:30',
-    icon: '🏺',
-  },
-  {
-    title: 'Bếp Cơm Niêu & Món Nam Bộ',
-    district: 'Quận 1',
-    category: 'Ẩm thực',
-    duration: '90 phút',
-    price: '220.000₫',
-    time: '11:30 - 13:00',
-    icon: '🍲',
-  },
-  {
-    title: 'Thuyền hoàng hôn sông Sài Gòn',
-    district: 'Bến Bạch Đằng',
-    category: 'Thiên nhiên',
-    duration: '75 phút',
-    price: '150.000₫',
-    time: '16:30 - 17:45',
-    icon: '⛵',
-  },
-]
+import { useTranslation } from '../i18n'
 
 export function HomePage() {
+  const { t, locale } = useTranslation()
+
+  const categories = [
+    {
+      id: 'food',
+      name: t('home.catFood'),
+      icon: '🍜',
+      desc: t('home.catFoodDesc'),
+    },
+    {
+      id: 'handicraft',
+      name: t('home.catCraft'),
+      icon: '🎨',
+      desc: t('home.catCraftDesc'),
+    },
+    {
+      id: 'culture',
+      name: t('home.catCulture'),
+      icon: '🏛️',
+      desc: t('home.catCultureDesc'),
+    },
+    {
+      id: 'nature',
+      name: t('home.catNature'),
+      icon: '🌿',
+      desc: t('home.catNatureDesc'),
+    },
+  ]
+
+  const highlights = [
+    {
+      number: '01',
+      title: t('home.hl1Title'),
+      copy: t('home.hl1Copy'),
+      icon: CalendarCheck,
+    },
+    {
+      number: '02',
+      title: t('home.hl2Title'),
+      copy: t('home.hl2Copy'),
+      icon: Navigation,
+    },
+    {
+      number: '03',
+      title: t('home.hl3Title'),
+      copy: t('home.hl3Copy'),
+      icon: ShieldCheck,
+    },
+  ]
+
+  const curatedExperiences = [
+    {
+      title: locale === 'vi' ? 'Góc thủ công giấy Dó Sài Gòn' : 'Saigon Handmade Do Paper Studio',
+      district: locale === 'vi' ? 'Quận 1' : 'District 1',
+      category: t('explore.intentCraft'),
+      duration: `75 ${t('explore.minutes')}`,
+      price: locale === 'vi' ? '120.000₫' : '120,000 VND',
+      time: '09:00 - 10:15',
+      icon: '🎨',
+    },
+    {
+      title: locale === 'vi' ? 'Bàn trải nghiệm gốm Sài Gòn' : 'Saigon Artisan Ceramic Wheel',
+      district: locale === 'vi' ? 'Quận 3' : 'District 3',
+      category: t('explore.intentCraft'),
+      duration: `90 ${t('explore.minutes')}`,
+      price: locale === 'vi' ? '180.000₫' : '180,000 VND',
+      time: '10:00 - 11:30',
+      icon: '🏺',
+    },
+    {
+      title: locale === 'vi' ? 'Bếp Cơm Niêu & Món Nam Bộ' : 'Southern Claypot Kitchen & Tasting',
+      district: locale === 'vi' ? 'Quận 1' : 'District 1',
+      category: t('explore.intentFood'),
+      duration: `90 ${t('explore.minutes')}`,
+      price: locale === 'vi' ? '220.000₫' : '220,000 VND',
+      time: '11:30 - 13:00',
+      icon: '🍲',
+    },
+    {
+      title: locale === 'vi' ? 'Thuyền hoàng hôn sông Sài Gòn' : 'Saigon River Sunset Breeze Boat',
+      district: locale === 'vi' ? 'Bến Bạch Đằng' : 'Bach Dang Pier',
+      category: t('explore.intentNature'),
+      duration: `75 ${t('explore.minutes')}`,
+      price: locale === 'vi' ? '150.000₫' : '150,000 VND',
+      time: '16:30 - 17:45',
+      icon: '⛵',
+    },
+  ]
+
   return (
     <div className="home-container-3d">
       {/* Hero Section */}
@@ -91,28 +115,26 @@ export function HomePage() {
             <span className="hero-badge-glow" />
             <span className="hero-badge-text">
               <Compass size={14} className="text-emerald animate-spin-slow" />
-              TP. HỒ CHÍ MINH · NỀN TẢNG KHÁM PHÁ 3D
+              {t('home.badge')}
             </span>
           </div>
 
           <h1 className="hero-heading-3d">
-            Đi xa hơn vào <br />
-            <span className="gradient-text-emerald">đời sống</span> địa phương.
+            {t('home.heading1')} <br />
+            <span className="gradient-text-emerald">{t('home.headingHighlight')}</span> {t('home.heading2')}
           </h1>
 
           <p className="hero-description-3d">
-            Một chuyến đi trọn vẹn bắt đầu từ <strong>trải nghiệm đúng lúc</strong> — không phải
-            chỉ là những dấu chấm vô hồn trên bản đồ. Local Explorer AI gợi ý lịch trình phù hợp với
-            thời gian, nhịp đi và ngân sách của bạn.
+            {t('home.desc')}
           </p>
 
           <div className="hero-cta-group">
-            <Link className="btn-primary-3d" to="/explore">
-              <span>Khám phá trải nghiệm</span>
-              <ArrowRight size={18} />
+            <Link className="btn-primary-3d" to="/chat">
+              <Bot size={18} />
+              <span>{t('home.ctaChat')}</span>
             </Link>
-            <Link className="btn-secondary-3d" to="/planner">
-              <span>Tạo lịch trình thông minh</span>
+            <Link className="btn-secondary-3d" to="/explore">
+              <span>{t('home.ctaExplore')}</span>
               <ArrowUpRight size={17} />
             </Link>
           </div>
@@ -120,15 +142,15 @@ export function HomePage() {
           <div className="hero-features-strip">
             <div className="feature-pill">
               <Sparkles size={14} className="text-amber" />
-              <span>Planner Heuristic 0ms</span>
+              <span>{locale === 'vi' ? 'Planner Heuristic 0ms' : '0ms Heuristic Solver'}</span>
             </div>
             <div className="feature-pill">
               <Clock size={14} className="text-emerald" />
-              <span>Khung giờ Slot thực</span>
+              <span>{locale === 'vi' ? 'Khung giờ Slot thực' : 'Slot-Aware Realtime'}</span>
             </div>
             <div className="feature-pill">
               <Coins size={14} className="text-cyan" />
-              <span>Tối ưu hóa ngân sách</span>
+              <span>{locale === 'vi' ? 'Tối ưu hóa ngân sách' : 'Budget-Optimized'}</span>
             </div>
           </div>
         </div>
@@ -142,10 +164,14 @@ export function HomePage() {
       {/* Quick Vibe Categories */}
       <section className="vibe-section-3d">
         <div className="section-header-center">
-          <span className="section-eyebrow">CHỌN THEO NHỊP ĐI</span>
-          <h2 className="section-title-3d">Hôm nay bạn muốn cảm nhận điều gì?</h2>
+          <span className="section-eyebrow">
+            {locale === 'vi' ? 'CHỌN THEO NHỊP ĐI' : 'CURATED VIBES'}
+          </span>
+          <h2 className="section-title-3d">{t('home.categoriesTitle')}</h2>
           <p className="section-subtitle-3d">
-            Khám phá các hoạt động đặc trưng theo phong cách và sở thích riêng của bạn tại Sài Gòn.
+            {locale === 'vi'
+              ? 'Khám phá các hoạt động đặc trưng theo phong cách và sở thích riêng của bạn tại Sài Gòn.'
+              : 'Discover signature local activities curated by style and tempo across Ho Chi Minh City.'}
           </p>
         </div>
 
@@ -159,7 +185,7 @@ export function HomePage() {
                 <h3 className="vibe-title">{cat.name}</h3>
                 <p className="vibe-desc">{cat.desc}</p>
                 <div className="vibe-action">
-                  <span>Khám phá ngay</span>
+                  <span>{locale === 'vi' ? 'Khám phá ngay' : 'Explore now'}</span>
                   <ArrowRight size={15} />
                 </div>
               </TiltCard3D>
@@ -172,11 +198,16 @@ export function HomePage() {
       <section className="showcase-section-3d">
         <div className="section-header-split">
           <div>
-            <span className="section-eyebrow">GỢI Ý ĐẶC SẮC</span>
-            <h2 className="section-title-3d">Trải nghiệm đang mở khung giờ</h2>
+            <span className="section-eyebrow">
+              {locale === 'vi' ? 'GỢI Ý ĐẶC SẮC' : 'FEATURED PICKS'}
+            </span>
+            <h2 className="section-title-3d">{t('home.curatedTitle')}</h2>
+            <p style={{ color: 'var(--text-muted)', fontSize: '13.5px', marginTop: '4px' }}>
+              {t('home.curatedSubtitle')}
+            </p>
           </div>
           <Link to="/explore" className="view-all-link">
-            <span>Xem tất cả trải nghiệm</span>
+            <span>{t('home.viewAll')}</span>
             <ArrowRight size={16} />
           </Link>
         </div>
@@ -199,7 +230,7 @@ export function HomePage() {
               </div>
               <div className="showcase-footer">
                 <div>
-                  <small>Chi phí dự kiến</small>
+                  <small>{locale === 'vi' ? 'Chi phí dự kiến' : 'Estimated cost'}</small>
                   <strong>{item.price}</strong>
                 </div>
                 <div className="slot-badge">
@@ -216,10 +247,14 @@ export function HomePage() {
       <section className="philosophy-section-3d">
         <div className="philosophy-card-main">
           <div className="section-header-center">
-            <span className="section-eyebrow">VÌ SAO CHỌN LOCAL EXPLORER AI?</span>
-            <h2 className="section-title-3d">Giải pháp thông minh cho người du lịch hiện đại</h2>
+            <span className="section-eyebrow">
+              {locale === 'vi' ? 'VÌ SAO CHỌN LOCAL EXPLORER AI?' : 'SMART CITY ADVANTAGE'}
+            </span>
+            <h2 className="section-title-3d">{t('home.whyTitle')}</h2>
             <p className="section-subtitle-3d">
-              Không còn cảnh đến nơi phát hiện workshop đã kín chỗ hay quán nghỉ sớm.
+              {locale === 'vi'
+                ? 'Không còn cảnh đến nơi phát hiện workshop đã kín chỗ hay quán nghỉ sớm.'
+                : 'Say goodbye to arriving at closed workshops, sold-out slots, or rushing through rush-hour traffic.'}
             </p>
           </div>
 
@@ -246,22 +281,26 @@ export function HomePage() {
         <div className="cta-banner-glow" />
         <div className="cta-banner-inner">
           <div className="cta-text-side">
-            <span className="section-eyebrow text-emerald-300">SÀI GÒN ĐANG CHỜ BẠN</span>
+            <span className="section-eyebrow text-emerald-300">
+              {locale === 'vi' ? 'SÀI GÒN ĐANG CHỜ BẠN' : 'SAIGON IS CALLING'}
+            </span>
             <h2 className="cta-heading-3d">
-              Sẵn sàng cho một ngày <br />
-              <em>khám phá trọn vẹn?</em>
+              {t('home.ctaBannerTitle')}
             </h2>
             <p className="cta-sub-3d">
-              Nhập thời gian rảnh, số lượng người và ngân sách — AI sẽ tạo lịch trình hoàn chỉnh
-              trong nháy mắt.
+              {t('home.ctaBannerDesc')}
             </p>
           </div>
           <div className="cta-action-side">
             <Link to="/planner" className="btn-cta-hero">
-              <span>Bắt đầu lên lịch</span>
+              <span>{t('home.ctaBannerBtn')}</span>
               <ArrowRight size={20} />
             </Link>
-            <span className="cta-guarantee">Hoàn toàn miễn phí · Dữ liệu mô phỏng minh bạch</span>
+            <span className="cta-guarantee">
+              {locale === 'vi'
+                ? 'Hoàn toàn miễn phí · Dữ liệu mô phỏng minh bạch'
+                : '100% Free · Transparent Feasible Data'}
+            </span>
           </div>
         </div>
       </section>

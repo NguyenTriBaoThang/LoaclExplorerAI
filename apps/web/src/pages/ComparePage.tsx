@@ -12,6 +12,7 @@ import {
 } from 'lucide-react'
 import { compareItineraries, getMyItineraries } from '../api/client'
 import { TiltCard3D } from '../components/3d/TiltCard3D'
+import { useTranslation } from '../i18n'
 
 type Trip = {
   id: string
@@ -45,6 +46,7 @@ type Comparison = {
 }
 
 export function ComparePage() {
+  const { t, locale } = useTranslation()
   const [trips, setTrips] = useState<Trip[]>([])
   const [first, setFirst] = useState('')
   const [second, setSecond] = useState('')
@@ -59,8 +61,10 @@ export function ComparePage() {
         setFirst(items[0]?.id || '')
         setSecond(items[1]?.id || '')
       })
-      .catch(() => setError('Vui lòng đăng nhập để so sánh các lịch trình đã lưu của bạn.'))
-  }, [])
+      .catch(() => setError(locale === 'en'
+        ? 'Please sign in to compare your saved itineraries.'
+        : 'Vui lòng đăng nhập để so sánh các lịch trình đã lưu của bạn.'))
+  }, [locale])
 
   async function compare() {
     setLoading(true)
@@ -68,7 +72,9 @@ export function ComparePage() {
     try {
       setResult((await compareItineraries(first, second)) as Comparison)
     } catch {
-      setError('Không thể so sánh. Hãy chọn hai phương án lịch trình khác nhau.')
+      setError(locale === 'en'
+        ? 'Unable to compare. Please select two different itineraries.'
+        : 'Không thể so sánh. Hãy chọn hai phương án lịch trình khác nhau.')
     } finally {
       setLoading(false)
     }
@@ -80,13 +86,13 @@ export function ComparePage() {
       <div className="page-title-row-3d">
         <div>
           <span className="eyebrow-3d">
-            <span className="eyebrow-dot" /> CÔNG CỤ ĐỐI CHIẾU
+            <span className="eyebrow-dot" /> {t('compare.eyebrow')}
           </span>
           <h1 className="page-heading-3d">
-            So sánh hai phương án <em>lịch trình.</em>
+            {t('compare.headingMain')} <em>{t('compare.headingHighlight')}</em>
           </h1>
           <p className="page-subtext-3d">
-            Đối chiếu chi phí, thời gian di chuyển và các hoạt động được đề xuất giữa hai lịch trình khác nhau.
+            {t('compare.headingLead')}
           </p>
         </div>
       </div>
@@ -95,13 +101,13 @@ export function ComparePage() {
       <div className="compare-selector-card">
         <div className="compare-select-grid">
           <div className="compare-select-col">
-            <div className="compare-badge-chip badge-plan-a">Phương án A</div>
+            <div className="compare-badge-chip badge-plan-a">{t('compare.planA')}</div>
             <label className="field-group-3d">
-              <span>Chọn lịch trình đầu tiên</span>
+              <span>{t('compare.selectFirst')}</span>
               <select value={first} onChange={(e) => setFirst(e.target.value)}>
                 {trips.map((t) => (
                   <option key={t.id} value={t.id}>
-                    {t.planned_date ? `Ngày ${t.planned_date}` : 'Bản nháp'} — #{t.id.slice(0, 8)} (
+                    {t.planned_date ? `${locale === 'en' ? 'Date' : 'Ngày'} ${t.planned_date}` : (locale === 'en' ? 'Draft' : 'Bản nháp')} — #{t.id.slice(0, 8)} (
                     {t.estimated_cost_vnd.toLocaleString('vi-VN')}₫)
                   </option>
                 ))}
@@ -114,13 +120,13 @@ export function ComparePage() {
           </div>
 
           <div className="compare-select-col">
-            <div className="compare-badge-chip badge-plan-b">Phương án B</div>
+            <div className="compare-badge-chip badge-plan-b">{t('compare.planB')}</div>
             <label className="field-group-3d">
-              <span>Chọn lịch trình thứ hai</span>
+              <span>{t('compare.selectSecond')}</span>
               <select value={second} onChange={(e) => setSecond(e.target.value)}>
                 {trips.map((t) => (
                   <option key={t.id} value={t.id}>
-                    {t.planned_date ? `Ngày ${t.planned_date}` : 'Bản nháp'} — #{t.id.slice(0, 8)} (
+                    {t.planned_date ? `${locale === 'en' ? 'Date' : 'Ngày'} ${t.planned_date}` : (locale === 'en' ? 'Draft' : 'Bản nháp')} — #{t.id.slice(0, 8)} (
                     {t.estimated_cost_vnd.toLocaleString('vi-VN')}₫)
                   </option>
                 ))}
@@ -137,10 +143,10 @@ export function ComparePage() {
             onClick={() => void compare()}
           >
             <GitCompare size={17} />
-            <span>{loading ? 'Đang phân tích...' : 'So Sánh Chi Tiết'}</span>
+            <span>{loading ? t('compare.analyzing') : t('compare.compareDetailed')}</span>
           </button>
           {first === second && first && (
-            <span className="compare-warn-note">Vui lòng chọn 2 lịch trình khác nhau để đối chiếu.</span>
+            <span className="compare-warn-note">{t('compare.pickDiffWarning')}</span>
           )}
         </div>
       </div>
@@ -162,13 +168,13 @@ export function ComparePage() {
                 <Wallet size={20} />
               </div>
               <div className="kpi-info">
-                <small>CHÊNH LỆCH CHI PHÍ (B − A)</small>
+                <small>{t('compare.kpiCostDiff')}</small>
                 <strong className={result.cost_diff_vnd > 0 ? 'text-amber' : 'text-emerald'}>
                   {result.cost_diff_vnd >= 0 ? '+' : ''}
                   {result.cost_diff_vnd.toLocaleString('vi-VN')}₫
                 </strong>
                 <span>
-                  {result.cost_diff_vnd > 0 ? 'Phương án B tốn kém hơn' : 'Phương án B tiết kiệm hơn'}
+                  {result.cost_diff_vnd > 0 ? t('compare.costMoreB') : t('compare.costLessB')}
                 </span>
               </div>
             </TiltCard3D>
@@ -178,15 +184,15 @@ export function ComparePage() {
                 <Clock size={20} />
               </div>
               <div className="kpi-info">
-                <small>CHÊNH LỆCH HẠN VỀ</small>
+                <small>{t('compare.kpiDeadlineDiff')}</small>
                 <strong>
                   {result.return_deadline_diff_min >= 0 ? '+' : ''}
-                  {result.return_deadline_diff_min} phút
+                  {result.return_deadline_diff_min} {locale === 'en' ? 'mins' : 'phút'}
                 </strong>
                 <span>
                   {result.return_deadline_diff_min > 0
-                    ? 'Phương án B về muộn hơn'
-                    : 'Phương án B về sớm hơn'}
+                    ? t('compare.returnLaterB')
+                    : t('compare.returnEarlierB')}
                 </span>
               </div>
             </TiltCard3D>
@@ -196,20 +202,20 @@ export function ComparePage() {
                 <ArrowLeftRight size={20} />
               </div>
               <div className="kpi-info">
-                <small>THỨ TỰ DI CHUYỂN</small>
-                <strong>{result.order_changed ? 'Đã đổi thứ tự' : 'Giữ nguyên thứ tự'}</strong>
-                <span>Thuật toán tối ưu hóa tuyến đường</span>
+                <small>{t('compare.kpiOrder')}</small>
+                <strong>{result.order_changed ? t('compare.orderChanged') : t('compare.orderPreserved')}</strong>
+                <span>{t('compare.routeOptNote')}</span>
               </div>
             </TiltCard3D>
           </div>
 
           {/* Activity Delta List */}
           <div className="delta-activities-card">
-            <h3>Hoạt động khác biệt giữa hai phương án</h3>
+            <h3>{t('compare.activityDiffTitle')}</h3>
             <div className="delta-lists-grid">
               <div className="delta-box delta-added">
                 <span className="delta-box-title">
-                  <PlusCircle size={15} className="text-emerald" /> Điểm có ở B mà không có ở A
+                  <PlusCircle size={15} className="text-emerald" /> {t('compare.inBNotA')}
                 </span>
                 {result.added_experience_ids.length > 0 ? (
                   <ul className="delta-items-list">
@@ -224,13 +230,13 @@ export function ComparePage() {
                     })}
                   </ul>
                 ) : (
-                  <p className="delta-empty">Không có điểm mới nào được thêm.</p>
+                  <p className="delta-empty">{t('compare.noAdded')}</p>
                 )}
               </div>
 
               <div className="delta-box delta-removed">
                 <span className="delta-box-title">
-                  <MinusCircle size={15} className="text-rose" /> Điểm có ở A nhưng bị lược ở B
+                  <MinusCircle size={15} className="text-rose" /> {t('compare.inANotB')}
                 </span>
                 {result.removed_experience_ids.length > 0 ? (
                   <ul className="delta-items-list">
@@ -245,7 +251,7 @@ export function ComparePage() {
                     })}
                   </ul>
                 ) : (
-                  <p className="delta-empty">Không có điểm nào bị loại bỏ.</p>
+                  <p className="delta-empty">{t('compare.noRemoved')}</p>
                 )}
               </div>
             </div>
@@ -257,15 +263,20 @@ export function ComparePage() {
               <div key={plan.id} className="compare-plan-column">
                 <div className="column-plan-header">
                   <span className={`column-plan-pill ${index === 0 ? 'badge-plan-a' : 'badge-plan-b'}`}>
-                    Phương án {index === 0 ? 'A' : 'B'}
+                    {index === 0 ? t('compare.planA') : t('compare.planB')}
                   </span>
-                  <h3>Lịch trình #{plan.id.slice(0, 8)}</h3>
+                  <h3>{locale === 'en' ? 'Itinerary' : 'Lịch trình'} #{plan.id.slice(0, 8)}</h3>
                   <div className="column-meta-stats">
                     <span>
-                      Tổng: <strong>{plan.estimated_cost_vnd.toLocaleString('vi-VN')}₫</strong>
+                      {t('compare.totalCost', { cost: `${plan.estimated_cost_vnd.toLocaleString('vi-VN')}₫` })}
                     </span>
                     <span>
-                      Về trước: <strong>{new Date(plan.return_deadline).toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' })}</strong>
+                      {t('compare.returnBefore', {
+                        time: new Date(plan.return_deadline).toLocaleTimeString(locale === 'en' ? 'en-US' : 'vi-VN', {
+                          hour: '2-digit',
+                          minute: '2-digit',
+                        }),
+                      })}
                     </span>
                   </div>
                 </div>
@@ -278,7 +289,7 @@ export function ComparePage() {
                         <strong>{stop.name}</strong>
                         <div className="col-stop-meta">
                           <span>
-                            {new Date(stop.start_at).toLocaleTimeString('vi-VN', {
+                            {new Date(stop.start_at).toLocaleTimeString(locale === 'en' ? 'en-US' : 'vi-VN', {
                               hour: '2-digit',
                               minute: '2-digit',
                             })}
@@ -292,7 +303,7 @@ export function ComparePage() {
                 </div>
 
                 <Link to={`/itinerary/${plan.id}`} className="btn-secondary-3d btn-sm w-full text-center mt-4">
-                  <span>Mở xem chi tiết phương án {index === 0 ? 'A' : 'B'}</span>
+                  <span>{t('compare.openPlanDetails', { plan: index === 0 ? 'A' : 'B' })}</span>
                   <ArrowRight size={14} />
                 </Link>
               </div>

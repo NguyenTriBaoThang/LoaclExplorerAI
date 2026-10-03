@@ -1,4 +1,4 @@
-import { useEffect, useState, type FormEvent } from 'react'
+import { useEffect, useMemo, useState, type FormEvent } from 'react'
 import {
   ArrowRight,
   CalendarDays,
@@ -19,21 +19,7 @@ import { useNavigate } from 'react-router-dom'
 import { apiErrorMessage, createItinerary, getPOIs } from '../api/client'
 import { TiltCard3D } from '../components/3d/TiltCard3D'
 import type { POI } from '../types'
-
-const intents = [
-  { id: 'food', label: 'Ẩm thực Sài Gòn', glyph: '🍜', desc: 'Món Nam Bộ, cà phê vợt, bánh truyền thống' },
-  { id: 'handicraft', label: 'Thủ công mỹ nghệ', glyph: '🎨', desc: 'Làm sổ giấy dó, gốm men màu' },
-  { id: 'culture', label: 'Di sản & Văn hóa', glyph: '🏛️', desc: 'Kiến trúc cổ, triển lãm ký sự đô thị' },
-  { id: 'nature', label: 'Thiên nhiên phố thị', glyph: '🌿', desc: 'Thuyền hoàng hôn, vườn cổ thụ' },
-  { id: 'relaxation', label: 'Thư giãn & Phục hồi', glyph: '🍵', desc: 'Trà thảo mộc, chuông xoay Tây Tạng' },
-]
-
-const transportModes = [
-  { id: 'driving', label: 'Xe máy / Ô tô', icon: '🛵', note: 'Phù hợp đi qua nhiều quận, linh hoạt' },
-  { id: 'walking', label: 'Đi bộ khám phá', icon: '🚶', note: 'Tập trung khu phố cổ, bán kính hẹp' },
-  { id: 'bicycling', label: 'Xe đạp dạo phố', icon: '🚲', note: 'Thong thả sáng sớm hoặc chiều mát' },
-  { id: 'transit', label: 'Xe bus công cộng', icon: '🚌', note: 'Tiết kiệm chi phí, trải nghiệm địa phương' },
-]
+import { useTranslation } from '../i18n'
 
 const budgetPresets = [500000, 1000000, 2000000, 3500000]
 
@@ -46,7 +32,29 @@ const tomorrow = () => {
 }
 
 export function PlannerPage() {
+  const { t, locale } = useTranslation()
   const navigate = useNavigate()
+
+  const intents = useMemo(() => [
+    { id: 'food', label: t('home.catFood'), glyph: '🍜', desc: t('home.catFoodDesc') },
+    { id: 'handicraft', label: t('home.catCraft'), glyph: '🎨', desc: t('home.catCraftDesc') },
+    { id: 'culture', label: t('home.catCulture'), glyph: '🏛️', desc: t('home.catCultureDesc') },
+    { id: 'nature', label: t('home.catNature'), glyph: '🌿', desc: t('home.catNatureDesc') },
+    {
+      id: 'relaxation',
+      label: locale === 'en' ? 'Wellness & Relaxation' : 'Thư giãn & Phục hồi',
+      glyph: '🍵',
+      desc: locale === 'en' ? 'Herbal tea, singing bowls' : 'Trà thảo mộc, chuông xoay Tây Tạng',
+    },
+  ], [t, locale])
+
+  const transportModes = useMemo(() => [
+    { id: 'driving', label: t('planner.transportMotorbike'), icon: '🛵', note: t('planner.transportMotorbikeNote') },
+    { id: 'walking', label: t('planner.transportWalking'), icon: '🚶', note: t('planner.transportWalkingNote') },
+    { id: 'bicycling', label: t('planner.transportBicycle'), icon: '🚲', note: t('planner.transportBicycleNote') },
+    { id: 'transit', label: t('planner.transportBus'), icon: '🚌', note: t('planner.transportBusNote') },
+  ], [t])
+
   const [date, setDate] = useState(tomorrow())
   const [startTime, setStartTime] = useState('09:00')
   const [endTime, setEndTime] = useState('16:00')
@@ -78,7 +86,6 @@ export function PlannerPage() {
     )
   }
 
-  // Calculate approximate duration
   const startHour =
     parseInt(startTime.split(':')[0], 10) + parseInt(startTime.split(':')[1], 10) / 60
   const endHour =
@@ -136,20 +143,19 @@ export function PlannerPage() {
       <div className="page-title-row-3d">
         <div>
           <span className="eyebrow-3d">
-            <span className="eyebrow-dot" /> LẬP KẾ HOẠCH THÔNG MINH
+            <span className="eyebrow-dot" /> {t('planner.eyebrow')}
           </span>
           <h1 className="page-heading-3d">
-            Thiết kế một ngày <em>đáng nhớ.</em>
+            {t('planner.headingMain')} <em>{t('planner.headingHighlight')}</em>
           </h1>
           <p className="page-subtext-3d">
-            Hệ thống kết hợp mục đích chuyến đi, sức chứa khung giờ và tuyến đường di chuyển tối ưu
-            để tạo lịch trình thực tế nhất tại TP. Hồ Chí Minh.
+            {t('planner.headingLead')}
           </p>
         </div>
         <div className="planner-badge-wrap">
           <span className="planner-city-badge">
             <MapPin size={14} className="text-emerald" />
-            TP. HỒ CHÍ MINH · HEURISTIC ENGINE
+            {t('planner.cityBadge')}
           </span>
         </div>
       </div>
@@ -160,21 +166,25 @@ export function PlannerPage() {
           {/* Section 01: Thời gian & Nhóm */}
           <div className="form-card-3d">
             <div className="form-card-header">
-              <span className="step-num">01</span>
+              <span className="step-num">{t('planner.step1Num')}</span>
               <div>
-                <h2>Thời gian & Quy mô nhóm</h2>
-                <p>Khung thời gian rảnh và ngân sách dự kiến của bạn.</p>
+                <h2>{t('planner.step1Title')}</h2>
+                <p>{t('planner.step1Desc')}</p>
               </div>
               <div className="duration-preview-chip">
                 <Clock3 size={13} className="text-emerald" />
-                <span>{totalHours > 0 ? `Thời lượng: ~${totalHours} giờ` : 'Cần kiểm tra giờ'}</span>
+                <span>
+                  {totalHours > 0
+                    ? t('planner.durationHours', { hours: totalHours })
+                    : t('planner.checkHours')}
+                </span>
               </div>
             </div>
 
             <div className="form-fields-grid-3">
               <label className="field-group-3d">
                 <span>
-                  <CalendarDays size={14} className="text-emerald" /> Ngày đi
+                  <CalendarDays size={14} className="text-emerald" /> {t('planner.dateLabel')}
                 </span>
                 <input
                   required
@@ -187,7 +197,7 @@ export function PlannerPage() {
 
               <label className="field-group-3d">
                 <span>
-                  <Clock3 size={14} className="text-amber" /> Giờ bắt đầu
+                  <Clock3 size={14} className="text-amber" /> {t('planner.startTime')}
                 </span>
                 <input
                   required
@@ -199,7 +209,7 @@ export function PlannerPage() {
 
               <label className="field-group-3d">
                 <span>
-                  <Clock3 size={14} className="text-amber" /> Giờ kết thúc
+                  <Clock3 size={14} className="text-amber" /> {t('planner.endTime')}
                 </span>
                 <input
                   required
@@ -213,21 +223,23 @@ export function PlannerPage() {
             <div className="form-fields-grid-2">
               <div className="field-group-3d">
                 <span>
-                  <Users size={14} className="text-cyan" /> Số lượng thành viên
+                  <Users size={14} className="text-cyan" /> {t('planner.groupSize')}
                 </span>
                 <div className="stepper-3d">
                   <button
                     type="button"
                     onClick={() => setGroupSize(Math.max(1, groupSize - 1))}
-                    aria-label="Giảm"
+                    aria-label="Decrease"
                   >
                     <Minus size={15} />
                   </button>
-                  <span className="stepper-value">{groupSize} người</span>
+                  <span className="stepper-value">
+                    {t('planner.guestsUnit', { count: groupSize })}
+                  </span>
                   <button
                     type="button"
                     onClick={() => setGroupSize(Math.min(30, groupSize + 1))}
-                    aria-label="Tăng"
+                    aria-label="Increase"
                   >
                     <Plus size={15} />
                   </button>
@@ -237,10 +249,12 @@ export function PlannerPage() {
               <div className="field-group-3d">
                 <div className="field-label-split">
                   <span>
-                    <Wallet size={14} className="text-emerald" /> Tổng ngân sách (VND)
+                    <Wallet size={14} className="text-emerald" /> {t('planner.budget')}
                   </span>
                   <span className="budget-calc-sub">
-                    ~{Math.floor(budget / groupSize).toLocaleString('vi-VN')}₫ / người
+                    {t('planner.budgetPerPerson', {
+                      cost: Math.floor(budget / groupSize).toLocaleString('vi-VN'),
+                    })}
                   </span>
                 </div>
                 <input
@@ -270,10 +284,10 @@ export function PlannerPage() {
           {/* Section 02: Mục đích trải nghiệm */}
           <div className="form-card-3d">
             <div className="form-card-header">
-              <span className="step-num">02</span>
+              <span className="step-num">{t('planner.step2Num')}</span>
               <div>
-                <h2>Mục đích & Phong cách chuyến đi</h2>
-                <p>Chọn các hoạt động bạn muốn AI ưu tiên đưa vào lịch.</p>
+                <h2>{t('planner.step2Title')}</h2>
+                <p>{t('planner.step2Desc')}</p>
               </div>
             </div>
 
@@ -302,10 +316,10 @@ export function PlannerPage() {
           {/* Section 03: Phương tiện di chuyển */}
           <div className="form-card-3d">
             <div className="form-card-header">
-              <span className="step-num">03</span>
+              <span className="step-num">{t('planner.step3Num')}</span>
               <div>
-                <h2>Phương tiện di chuyển</h2>
-                <p>AI sẽ dùng phương tiện này để tính toán thời gian đi lại giữa các điểm.</p>
+                <h2>{t('planner.step3Title')}</h2>
+                <p>{t('planner.step3Desc')}</p>
               </div>
             </div>
 
@@ -330,20 +344,20 @@ export function PlannerPage() {
           {/* Section 04: Điểm xuất phát, Điểm về & Khóa POI */}
           <div className="form-card-3d">
             <div className="form-card-header">
-              <span className="step-num">04</span>
+              <span className="step-num">{t('planner.step4Num')}</span>
               <div>
-                <h2>Điểm đón, điểm về & Ghim địa điểm</h2>
-                <p>Giờ về được thuật toán tính gồm cả chặng từ trải nghiệm cuối đến điểm về.</p>
+                <h2>{t('planner.step4Title')}</h2>
+                <p>{t('planner.step4Desc')}</p>
               </div>
             </div>
 
             <div className="form-fields-grid-2">
               <label className="field-group-3d">
                 <span>
-                  <MapPin size={14} className="text-emerald" /> Điểm xuất phát (Tùy chọn)
+                  <MapPin size={14} className="text-emerald" /> {t('planner.originLabel')}
                 </span>
                 <select value={originId} onChange={(e) => setOriginId(e.target.value)}>
-                  <option value="">Chưa chọn điểm xuất phát cụ thể</option>
+                  <option value="">{t('planner.originDefault')}</option>
                   {pois.map((p) => (
                     <option key={p.id} value={p.id}>
                       {p.name}
@@ -354,10 +368,10 @@ export function PlannerPage() {
 
               <label className="field-group-3d">
                 <span>
-                  <MapPin size={14} className="text-amber" /> Điểm phải về trước giờ kết thúc
+                  <MapPin size={14} className="text-amber" /> {t('planner.destinationLabel')}
                 </span>
                 <select value={destinationId} onChange={(e) => setDestinationId(e.target.value)}>
-                  <option value="">Chưa chọn điểm về cố định</option>
+                  <option value="">{t('planner.destDefault')}</option>
                   {pois.map((p) => (
                     <option key={p.id} value={p.id}>
                       {p.name}
@@ -372,17 +386,17 @@ export function PlannerPage() {
               <div className="poi-lock-header">
                 <div className="poi-lock-title-col">
                   <span className="poi-lock-label">
-                    <Lock size={14} className="text-cyan" /> Ghim địa điểm bạn muốn ghé
+                    <Lock size={14} className="text-cyan" /> {t('planner.pinTitle')}
                   </span>
                   <small>
-                    Các địa điểm này sẽ được thuật toán ưu tiên giữ lại trong lịch trình.
+                    {t('planner.pinDesc')}
                   </small>
                 </div>
                 {pois.length > 6 && (
                   <div className="poi-search-box-mini">
                     <Search size={14} />
                     <input
-                      placeholder="Tìm địa điểm..."
+                      placeholder={t('planner.searchPoiPlaceholder')}
                       value={poiSearch}
                       onChange={(e) => setPoiSearch(e.target.value)}
                     />
@@ -423,11 +437,13 @@ export function PlannerPage() {
           {/* Submit Row */}
           <div className="submit-action-card">
             <div className="submit-summary-text">
-              <strong>Đã chọn {selectedIntents.length} sở thích · {groupSize} khách</strong>
-              <small>Heuristic Planner 0ms · Dữ liệu khung giờ thực tế</small>
+              <strong>
+                {t('planner.submitSummary', { intents: selectedIntents.length, group: groupSize })}
+              </strong>
+              <small>{t('planner.submitEngine')}</small>
             </div>
             <button className="btn-planner-submit" type="submit" disabled={loading}>
-              <span>{loading ? 'Đang tối ưu lịch trình...' : 'Tạo Lịch Trình Ngay'}</span>
+              <span>{loading ? t('planner.planning') : t('planner.submitBtn')}</span>
               <ArrowRight size={18} />
             </button>
           </div>
@@ -441,29 +457,33 @@ export function PlannerPage() {
                 <Compass size={22} className="brand-compass" />
               </div>
               <div>
-                <span className="preview-kicker">XEM TRƯỚC LỊCH TRÌNH</span>
-                <h3 className="preview-main-title">Một ngày tại Sài Gòn</h3>
+                <span className="preview-kicker">{t('planner.previewKicker')}</span>
+                <h3 className="preview-main-title">{t('planner.previewMainTitle')}</h3>
               </div>
             </div>
 
             <div className="preview-stats-bar">
               <div className="preview-stat-cell">
-                <small>Thời lượng</small>
-                <strong>{totalHours > 0 ? `${totalHours} giờ` : 'Chưa định'}</strong>
+                <small>{t('planner.previewDuration')}</small>
+                <strong>
+                  {totalHours > 0
+                    ? `${totalHours} ${locale === 'en' ? 'hrs' : 'giờ'}`
+                    : t('planner.checkHours')}
+                </strong>
               </div>
               <div className="preview-stat-cell">
-                <small>Dự kiến</small>
+                <small>{t('planner.previewEst')}</small>
                 <strong>~{Math.floor(budget / groupSize).toLocaleString('vi-VN')}₫</strong>
-                <span className="stat-unit">/ người</span>
+                <span className="stat-unit">/ {locale === 'en' ? 'person' : 'người'}</span>
               </div>
               <div className="preview-stat-cell">
-                <small>Quy mô</small>
-                <strong>{groupSize} khách</strong>
+                <small>{t('planner.previewGroup')}</small>
+                <strong>{t('planner.guestsUnit', { count: groupSize })}</strong>
               </div>
             </div>
 
             <div className="preview-vibe-list">
-              <span className="vibe-list-label">Ưu tiên trải nghiệm:</span>
+              <span className="vibe-list-label">{t('planner.previewPriority')}</span>
               <div className="vibe-tags-wrap">
                 {selectedIntents.length > 0 ? (
                   selectedIntents.map((id) => {
@@ -475,7 +495,7 @@ export function PlannerPage() {
                     )
                   })
                 ) : (
-                  <span className="vibe-pill-empty">Chưa chọn mục đích</span>
+                  <span className="vibe-pill-empty">{t('planner.noIntentSelected')}</span>
                 )}
               </div>
             </div>
@@ -483,23 +503,25 @@ export function PlannerPage() {
             <div className="preview-simulation-notice">
               <Sparkles size={16} className="text-amber" />
               <p>
-                Thuật toán Heuristic cân bằng thời gian dừng chân, sức chứa từng khung giờ và tính
-                toán ma trận khoảng cách giữa các quận.
+                {t('planner.previewHeuristicNotice')}
               </p>
             </div>
 
             <div className="preview-card-footer">
               <Navigation size={14} className="text-emerald" />
-              <span>Chế độ: {transportModes.find((m) => m.id === transport)?.label}</span>
+              <span>
+                {t('planner.modeLabel', {
+                  mode: transportModes.find((m) => m.id === transport)?.label || transport,
+                })}
+              </span>
             </div>
           </TiltCard3D>
 
           {/* Quick FAQ / Guarantee */}
           <div className="planner-guarantee-card">
-            <h4>💡 Lưu ý về tính khả thi</h4>
+            <h4>{t('planner.feasibilityTitle')}</h4>
             <p>
-              Các khung giờ chưa có báo cáo sức chứa sẽ hiện ở trạng thái <em>“cần xác nhận”</em> kèm
-              gợi ý liên hệ nhà cung cấp, giúp bạn luôn chủ động trong kế hoạch.
+              {t('planner.feasibilityBody')}
             </p>
           </div>
         </aside>

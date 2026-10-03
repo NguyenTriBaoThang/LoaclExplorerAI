@@ -2,14 +2,7 @@ import { ArrowUpRight, Clock3, MapPin, Users, Sparkles, Compass } from 'lucide-r
 import type { Experience } from '../../types'
 import { SimulatedBadge } from '../common/StatusBadge'
 import { TiltCard3D } from '../3d/TiltCard3D'
-
-const categoryMeta: Record<string, { label: string; color: string; icon: string }> = {
-  handicraft: { label: 'Thủ công', color: 'bg-amber-500/10 text-amber-700 border-amber-200', icon: '🎨' },
-  culture: { label: 'Văn hóa', color: 'bg-emerald-500/10 text-emerald-700 border-emerald-200', icon: '🏛️' },
-  food: { label: 'Ẩm thực', color: 'bg-orange-500/10 text-orange-700 border-orange-200', icon: '🍜' },
-  nature: { label: 'Thiên nhiên', color: 'bg-teal-500/10 text-teal-700 border-teal-200', icon: '🌿' },
-  relaxation: { label: 'Thư giãn', color: 'bg-indigo-500/10 text-indigo-700 border-indigo-200', icon: '🍵' },
-}
+import { useTranslation } from '../../i18n'
 
 export function ExperienceCard({
   experience,
@@ -20,9 +13,19 @@ export function ExperienceCard({
   selected?: boolean
   onSelect: () => void
 }) {
+  const { t, locale } = useTranslation()
+
+  const categoryMeta: Record<string, { label: string; color: string; icon: string }> = {
+    handicraft: { label: t('explore.intentCraft'), color: 'bg-amber-500/10 text-amber-700 border-amber-200', icon: '🎨' },
+    culture: { label: t('explore.intentCulture'), color: 'bg-emerald-500/10 text-emerald-700 border-emerald-200', icon: '🏛️' },
+    food: { label: t('explore.intentFood'), color: 'bg-orange-500/10 text-orange-700 border-orange-200', icon: '🍜' },
+    nature: { label: t('explore.intentNature'), color: 'bg-teal-500/10 text-teal-700 border-teal-200', icon: '🌿' },
+    relaxation: { label: t('explore.intentRelax'), color: 'bg-indigo-500/10 text-indigo-700 border-indigo-200', icon: '🍵' },
+  }
+
   const slot = experience.slots.find((item) => !['full', 'unavailable', 'cancelled'].includes(item.status))
   const time = slot
-    ? new Intl.DateTimeFormat('vi-VN', {
+    ? new Intl.DateTimeFormat(locale === 'vi' ? 'vi-VN' : 'en-US', {
         hour: '2-digit',
         minute: '2-digit',
         timeZone: 'Asia/Ho_Chi_Minh',
@@ -65,21 +68,24 @@ export function ExperienceCard({
         <div className="card-stats-row">
           <div className="stat-item">
             <Clock3 size={14} className="stat-icon" />
-            <span>{experience.duration_min} phút</span>
+            <span>{experience.duration_min} {t('explore.minutes')}</span>
           </div>
           <div className="stat-item">
             <Users size={14} className="stat-icon" />
-            <span>{experience.price_vnd.toLocaleString('vi-VN')}₫ / người</span>
+            <span>
+              {experience.price_vnd.toLocaleString(locale === 'vi' ? 'vi-VN' : 'en-US')}
+              {locale === 'vi' ? '₫ / người' : ' VND / person'}
+            </span>
           </div>
           {experience.indoor ? (
             <div className="stat-item">
               <Compass size={14} className="stat-icon" />
-              <span>Trong nhà</span>
+              <span>{locale === 'vi' ? 'Trong nhà' : 'Indoor'}</span>
             </div>
           ) : (
             <div className="stat-item">
               <Sparkles size={14} className="stat-icon" />
-              <span>Ngoài trời</span>
+              <span>{locale === 'vi' ? 'Ngoài trời' : 'Outdoor'}</span>
             </div>
           )}
         </div>
@@ -88,7 +94,7 @@ export function ExperienceCard({
         <div className="card-footer-3d">
           <span className="slot-notice">
             <MapPin size={13} className="text-emerald" />
-            {slot ? `Khung giờ từ ${time}` : 'Chưa có slot cố định'}
+            {slot ? t('explore.slotNotice', { time: time || '' }) : t('explore.noFixedSlot')}
           </span>
           <SimulatedBadge />
         </div>

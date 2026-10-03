@@ -12,6 +12,7 @@ from app.api.dependencies import get_db, require_roles
 from app.models.entities import AuditLog, Evidence, Experience, ExperienceSlot, Itinerary, ItineraryStop, POI, Provider, User
 from app.schemas.management import AdminUserUpdateRequest, ModerationRequest, POIMergeRequest, ProviderCreateRequest
 from app.services.auth_service import hash_password
+from app.services.evidence_service import REQUIRED_FIELDS, covered_fields, current_verified_evidence, get_target, is_current_and_unexpired, target_revision, utc_now
 
 router = APIRouter(prefix="/api/admin", tags=["administration"])
 
@@ -101,7 +102,12 @@ def moderation_queue(user: User = Depends(require_roles("admin")), db: Session =
     return {
         "pois": [{"id": item.id, "name": item.name, "address": item.address, "status": item.verification_status} for item in pois],
         "experiences": [{"id": item.id, "title": item.title, "provider_id": item.provider_id, "status": item.verification_status} for item in experiences],
-        "evidence": [{"id": item.id, "source_uri": item.source_uri, "source_type": item.source_type, "expires_at": item.expires_at, "status": item.verification_status} for item in evidence],
+        "evidence": [{"id": item.id, "source_uri": item.source_uri, "source_type": item.source_type,
+                      "source_label": item.source_label, "license": item.license, "notes": item.notes,
+                      "target_type": item.target_type, "target_id": item.target_id,
+                      "target_revision": item.target_revision, "fields_covered": item.fields_covered,
+                      "observed_at": item.observed_at, "expires_at": item.expires_at,
+                      "submitted_by": item.submitted_by, "status": item.verification_status} for item in evidence],
     }
 
 
@@ -114,13 +120,47 @@ def review_entity(entity_type: str, entity_id: str, payload: ModerationRequest, 
     entity = db.get(model, entity_id)
     if entity is None:
         raise HTTPException(status_code=404, detail={"code": "ENTITY_NOT_FOUND", "message": "Entity not found."})
+    now = utc_now()
+    if payload.action == "approve" and isinstance(entity, Evidence):
+        target = get_target(db, entity.target_type or "", entity.target_id or "")
+        if target is None:
+            raise HTTPException(status_code=409, detail={"code": "EVIDENCE_TARGET_REQUIRED", "message": "Evidence must be attached to a POI, experience, or slot before approval."})
+        if entity.target_revision != target_revision(entity.target_type, target):
+            raise HTTPException(status_code=409, detail={"code": "EVIDENCE_STALE_REVISION", "message": "The target changed after this evidence was submitted. Submit fresh evidence."})
+        if not is_current_and_unexpired(entity, now):
+            raise HTTPException(status_code=409, detail={"code": "EVIDENCE_EXPIRED_OR_UNDATED", "message": "Evidence needs a valid observation time and a future expiry."})
+        if entity.target_type not in REQUIRED_FIELDS or not set(entity.fields_covered or {}).issubset(REQUIRED_FIELDS[entity.target_type]):
+            raise HTTPException(status_code=422, detail={"code": "INVALID_EVIDENCE_COVERAGE", "message": "Evidence field coverage is missing or invalid."})
+    if payload.action == "approve" and isinstance(entity, (POI, Experience)):
+        kind = "poi" if isinstance(entity, POI) else "experience"
+        current_evidence = current_verified_evidence(db, kind, entity.id, entity.data_revision)
+        missing_fields = sorted(REQUIRED_FIELDS[kind] - covered_fields(current_evidence))
+        if missing_fields:
+            raise HTTPException(status_code=409, detail={
+                "code": "CATALOG_EVIDENCE_INCOMPLETE",
+                "message": "Cannot approve catalog data until every required field is covered by current, reviewed, unexpired evidence.",
+                "missing_fields": missing_fields,
+            })
+        if isinstance(entity, Experience) and not entity_is_verified_poi(db, entity.poi_id):
+            raise HTTPException(status_code=409, detail={"code": "POI_NOT_VERIFIED", "message": "Verify the linked POI and its evidence before approving an experience."})
     entity.verification_status = {"approve": "verified", "reject": "rejected", "hide": "hidden"}[payload.action]
     if isinstance(entity, Evidence):
         entity.reviewed_by = actor.id
-        entity.reviewed_at = datetime.now(timezone.utc)
+        entity.reviewed_at = now
+        if payload.action == "approve":
+            entity.verified_by = actor.id
+            entity.verified_at = now
     _audit(db, actor, f"{entity_type}.{payload.action}", entity_type, entity_id, {"note": payload.note, "new_status": entity.verification_status})
     db.commit()
     return {"entity_type": entity_type, "id": entity_id, "status": entity.verification_status}
+
+
+def entity_is_verified_poi(db: Session, poi_id: str) -> bool:
+    poi = db.get(POI, poi_id)
+    if poi is None or poi.verification_status != "verified":
+        return False
+    evidence = current_verified_evidence(db, "poi", poi.id, poi.data_revision)
+    return REQUIRED_FIELDS["poi"].issubset(covered_fields(evidence))
 
 
 @router.get("/duplicates/pois")

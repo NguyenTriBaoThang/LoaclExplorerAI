@@ -1,7 +1,8 @@
 from datetime import datetime
 from typing import Literal
+from urllib.parse import urlsplit
 
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, Field, field_validator, model_validator
 
 
 class ExperienceDraftRequest(BaseModel):
@@ -21,6 +22,7 @@ class SlotCreateRequest(BaseModel):
     end_at: datetime
     capacity_total: int = Field(ge=1, le=10000)
     available_reported: int = Field(ge=0, le=10000)
+    expires_at: datetime
 
     @field_validator("start_at", "end_at")
     @classmethod
@@ -29,12 +31,61 @@ class SlotCreateRequest(BaseModel):
             raise ValueError("Datetime must include a timezone offset")
         return value
 
+    @field_validator("expires_at")
+    @classmethod
+    def require_expiry_timezone(cls, value: datetime) -> datetime:
+        if value.tzinfo is None or value.utcoffset() is None:
+            raise ValueError("Expiry must include a timezone offset")
+        return value
+
 
 class SlotUpdateRequest(BaseModel):
     expected_version: int = Field(ge=1)
     status: Literal["open", "full", "cancelled"]
     available_reported: int | None = Field(default=None, ge=0, le=10000)
     capacity_total: int | None = Field(default=None, ge=1, le=10000)
+    expires_at: datetime | None = None
+
+    @field_validator("expires_at")
+    @classmethod
+    def require_expiry_timezone(cls, value: datetime | None) -> datetime | None:
+        if value is not None and (value.tzinfo is None or value.utcoffset() is None):
+            raise ValueError("Expiry must include a timezone offset")
+        return value
+
+
+class EvidenceCreateRequest(BaseModel):
+    target_type: Literal["poi", "experience"]
+    target_id: str = Field(min_length=1, max_length=36)
+    source_uri: str = Field(min_length=8, max_length=1000)
+    source_type: Literal["official_website", "provider_confirmation", "field_visit", "document", "government_dataset", "other"]
+    source_label: str | None = Field(default=None, max_length=180)
+    license: str | None = Field(default=None, max_length=120)
+    fields_covered: list[str] = Field(min_length=1, max_length=20)
+    observed_at: datetime
+    expires_at: datetime
+    notes: str = Field(default="", max_length=1000)
+
+    @field_validator("source_uri")
+    @classmethod
+    def require_source_url(cls, value: str) -> str:
+        parsed = urlsplit(value.strip())
+        if parsed.scheme not in {"http", "https"} or not parsed.netloc:
+            raise ValueError("Source must be a traceable http(s) URL")
+        return value.strip()
+
+    @field_validator("observed_at", "expires_at")
+    @classmethod
+    def require_evidence_timezone(cls, value: datetime) -> datetime:
+        if value.tzinfo is None or value.utcoffset() is None:
+            raise ValueError("Evidence timestamps must include a timezone offset")
+        return value
+
+    @model_validator(mode="after")
+    def require_positive_validity_window(self):
+        if self.expires_at <= self.observed_at:
+            raise ValueError("Evidence expiry must be after its observation time")
+        return self
 
 
 class ModerationRequest(BaseModel):
