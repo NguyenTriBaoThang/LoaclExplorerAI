@@ -13,10 +13,13 @@ import {
   ShieldCheck,
   ChevronDown,
   CheckCircle2,
+  Sun,
+  Moon,
 } from 'lucide-react'
 import { NavLink, Outlet, useNavigate } from 'react-router-dom'
 import { useAuth } from '../auth'
 import { logout } from '../api/client'
+import { setTheme, useTheme } from '../theme'
 
 const links = [
   { to: '/explore', label: 'Khám phá trải nghiệm' },
@@ -30,6 +33,7 @@ export function AppLayout() {
   const [userDropdown, setUserDropdown] = useState(false)
   const { user, setUser } = useAuth()
   const navigate = useNavigate()
+  const theme = useTheme()
   const dropdownRef = useRef<HTMLDivElement>(null)
 
   // Close dropdown on click outside
@@ -221,6 +225,16 @@ export function AppLayout() {
                 </NavLink>
               </div>
             )}
+
+            <button
+              type="button"
+              className="theme-toggle-3d"
+              onClick={() => setTheme(theme === 'dark' ? 'light' : 'dark')}
+              aria-label={theme === 'dark' ? 'Chuyển sang giao diện sáng' : 'Chuyển sang giao diện tối'}
+              title={theme === 'dark' ? 'Giao diện sáng' : 'Giao diện tối'}
+            >
+              {theme === 'dark' ? <Sun size={17} /> : <Moon size={17} />}
+            </button>
 
             {/* Mobile Burger Toggle */}
             <button
