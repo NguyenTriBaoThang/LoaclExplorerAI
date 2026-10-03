@@ -6390,12 +6390,56 @@ a {
   }
 }
 
-/* Small phones: header only fits brand + theme toggle + avatar + burger; CTA/login live in the drawer */
+/* Small phones: header only fits brand + theme toggle + burger; CTA, login and account links live in the drawer */
 @media (max-width: 640px) {
   .header-cta-3d,
   .guest-action-group,
-  .user-meta-brief {
+  .user-dropdown-container {
     display: none;
+  }
+}
+
+/* Mobile horizontal-overflow fixes */
+.planner-grid-3d > *,
+.form-fields-grid-2 > *,
+.form-fields-grid-3 > *,
+.poi-lock-cards-grid > *,
+.compare-select-col,
+.field-group-3d select {
+  min-width: 0; /* let 1fr tracks / long <select> options shrink below their content's min width */
+}
+.auth-page-container {
+  overflow-x: clip; /* decorative glow orbs must not widen the page */
+}
+@media (max-width: 768px) {
+  .profile-banner-card {
+    flex-wrap: wrap;
+    gap: 20px;
+    padding: 28px 24px;
+  }
+  .table-controls-bar,
+  .table-actions-group {
+    flex-wrap: wrap;
+  }
+  .provider-table-card-3d {
+    overflow-x: auto; /* table scrolls inside its card instead of clipping the action column */
+  }
+  .table-header-row,
+  .table-rows-container {
+    min-width: 680px;
+  }
+  .poi-lock-cards-grid {
+    grid-template-columns: 1fr;
+  }
+  .shared-cta-inner {
+    flex-wrap: wrap;
+  }
+  .shared-cta-card {
+    padding: 28px 24px;
+  }
+  .moderation-item-card {
+    flex-wrap: wrap;
+    gap: 12px;
   }
 }
 
