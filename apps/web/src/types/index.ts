@@ -182,6 +182,7 @@ export interface Itinerary {
   feasibility_status: string
   estimated_cost_vnd: number
   total_travel_min: number
+  group_size?: number
   start_at?: string
   return_deadline?: string
   estimated_return_at?: string
@@ -201,4 +202,27 @@ export interface Itinerary {
     uncertainty: string[]
     ranking_model_version?: string | null
   }
+}
+
+export interface Booking {
+  id: string
+  itinerary_id: string | null
+  itinerary_stop_id: string | null
+  experience_id: string
+  experience_title: string
+  slot_id: string
+  slot_status?: string
+  slot_start_at: string | null
+  provider_id: string
+  provider_name: string
+  quantity: number
+  amount_vnd: number
+  currency: string
+  status: 'pending_provider' | 'awaiting_payment' | 'confirmed' | 'rejected' | 'cancelled' | 'expired' | 'cancellation_requested' | 'refund_pending' | 'refunded'
+  hold_expires_at: string | null
+  provider_confirmed_at: string | null
+  confirmed_at: string | null
+  cancellation_reason: string | null
+  created_at: string
+  updated_at: string
 }

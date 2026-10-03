@@ -23,6 +23,20 @@ erDiagram
     POIS ||--o{ ITINERARY_STOPS : location
     EXPERIENCES ||--o{ ITINERARY_STOPS : activity
     EVENTS o|--o{ DECISION_LOGS : triggers
+    USERS ||--o{ BOOKINGS : requests
+    PROVIDERS ||--o{ BOOKINGS : serves
+    ITINERARIES o|--o{ BOOKINGS : context
+    ITINERARY_STOPS o|--o{ BOOKINGS : requested_stop
+    EXPERIENCE_SLOTS ||--o{ BOOKINGS : reserves
+    EXPERIENCES ||--o{ BOOKINGS : books
+    BOOKINGS ||--o{ BOOKING_EVENTS : history
+    BOOKINGS ||--o{ PAYMENT_TRANSACTIONS : payments
+
+    USERS {
+      varchar id PK
+      varchar role
+      varchar provider_id FK
+    }
 
     PROVIDERS {
       uuid id PK
@@ -163,6 +177,43 @@ erDiagram
       timestamptz verified_at
       timestamptz expires_at
     }
+    BOOKINGS {
+      varchar id PK
+      varchar user_id FK
+      varchar provider_id FK
+      varchar itinerary_id FK
+      varchar itinerary_stop_id FK
+      varchar experience_id FK
+      varchar slot_id FK
+      integer quantity
+      bigint amount_vnd
+      varchar currency
+      varchar status
+      timestamptz hold_expires_at
+      timestamptz provider_confirmed_at
+      timestamptz confirmed_at
+    }
+    PAYMENT_TRANSACTIONS {
+      varchar id PK
+      varchar booking_id FK
+      varchar provider
+      varchar provider_reference
+      varchar idempotency_key
+      bigint amount_vnd
+      varchar currency
+      varchar status
+      varchar checkout_url
+    }
+    BOOKING_EVENTS {
+      varchar id PK
+      varchar booking_id FK
+      varchar actor_user_id FK
+      varchar event_type
+      varchar from_status
+      varchar to_status
+      jsonb details
+      timestamptz created_at
+    }
 ```
 
 `intent_similarities` stores each pair once (`experience_a_id < experience_b_id`)
@@ -191,6 +242,12 @@ service validates the target and provider ownership. Editing a POI or
 experience increments its revision and makes evidence for the older version
 ineligible. Migration `0006_provider_poi_ownership` adds the owner pointer for
 provider-submitted POIs. See [sourced catalog workflow](sourced-catalog.md).
+
+Migration `0007_booking_payments` adds temporary reservations (`bookings`), a
+gateway transaction ledger (`payment_transactions`), and state/audit history
+(`booking_events`). Provider acceptance is distinct from paid confirmation;
+checkout/refunds remain disabled until a real payment provider is selected and
+integrated. See [booking and payment workflow](bookings-and-payments.md).
 
 The PRD lists 32 HCMC POI names grouped into eight areas, but does not provide
 their coordinates, addresses, source attribution, provider links, activities,

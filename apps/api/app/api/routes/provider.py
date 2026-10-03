@@ -7,7 +7,7 @@ from sqlalchemy.orm import Session, joinedload
 from geoalchemy2.elements import WKTElement
 
 from app.api.dependencies import get_db, require_roles
-from app.models.entities import AuditLog, Event, Evidence, Experience, ExperienceSlot, ItineraryStop, POI, Provider, User
+from app.models.entities import AuditLog, Booking, BookingEvent, Event, Evidence, Experience, ExperienceSlot, ItineraryStop, PaymentTransaction, POI, Provider, User
 from app.schemas.management import EvidenceCreateRequest, ExperienceDraftRequest, POIDraftRequest, SlotCreateRequest, SlotUpdateRequest
 from app.services.auth_service import hash_password
 from app.services.evidence_service import REQUIRED_FIELDS, target_revision, utc_now
@@ -250,6 +250,39 @@ def update_slot(slot_id: str, payload: SlotUpdateRequest, user: User = Depends(r
     if payload.status == "open" and payload.available_reported == 0:
         raise HTTPException(status_code=422, detail={"code": "OPEN_SLOT_HAS_NO_CAPACITY", "message": "Use full status when no seats remain."})
     now = utc_now()
+    expired_holds = db.scalars(select(Booking).where(
+        Booking.slot_id == slot.id,
+        Booking.status.in_(["pending_provider", "awaiting_payment"]),
+        Booking.hold_expires_at.is_not(None),
+        Booking.hold_expires_at <= now,
+    )).all()
+    for booking in expired_holds:
+        previous_booking_status = booking.status
+        booking.status = "expired"
+        booking.updated_at = now
+        db.add(BookingEvent(
+            id=str(uuid4()), booking_id=booking.id, actor_user_id=None,
+            event_type="hold_expired", from_status=previous_booking_status, to_status="expired",
+            details={"reason": "hold_timeout", "slot_id": slot.id}, created_at=now,
+        ))
+    db.flush()
+    active_reservations = db.scalars(select(Booking).where(
+        Booking.slot_id == slot.id,
+        Booking.status.in_(["pending_provider", "awaiting_payment", "confirmed", "cancellation_requested", "refund_pending"]),
+    )).all()
+    reserved_seats = sum(
+        booking.quantity for booking in active_reservations
+        if booking.status not in {"pending_provider", "awaiting_payment"}
+        or (booking.hold_expires_at is not None and (booking.hold_expires_at.replace(tzinfo=booking.hold_expires_at.tzinfo or timezone.utc) > now))
+    )
+    if payload.status != "cancelled" and payload.available_reported is not None and payload.available_reported < reserved_seats:
+        raise HTTPException(status_code=409, detail={"code": "CAPACITY_BELOW_ACTIVE_HOLDS", "message": "Số chỗ mới thấp hơn các yêu cầu giữ chỗ đang hoạt động; hãy xử lý các yêu cầu trước."})
+    effective_capacity = payload.capacity_total if payload.capacity_total is not None else slot.capacity_total
+    effective_available = payload.available_reported if payload.available_reported is not None else slot.available_reported
+    if payload.status != "cancelled" and effective_capacity is not None and effective_available is not None and effective_available > effective_capacity:
+        raise HTTPException(status_code=422, detail={"code": "CAPACITY_EXCEEDED", "message": "Số chỗ khả dụng không thể vượt tổng sức chứa."})
+    if payload.status != "cancelled" and effective_capacity is not None and effective_capacity < reserved_seats:
+        raise HTTPException(status_code=409, detail={"code": "CAPACITY_BELOW_ACTIVE_HOLDS", "message": "Tổng sức chứa mới thấp hơn số khách đã được giữ/xác nhận."})
     if slot.expires_at is not None and (slot.expires_at.tzinfo is None or slot.expires_at.utcoffset() is None):
         slot.expires_at = slot.expires_at.replace(tzinfo=timezone.utc)
     if payload.expires_at is not None:
@@ -266,6 +299,28 @@ def update_slot(slot_id: str, payload: SlotUpdateRequest, user: User = Depends(r
         slot.available_reported = 0
         db.add(Event(event_type="SLOT_CANCELLED", target_type="experience_slot", target_id=slot.id,
                      status="active", event_metadata={"source": "provider_portal", "provider_id": provider.id}))
+        for booking in active_reservations:
+            old_booking_status = booking.status
+            if booking.status in {"pending_provider", "awaiting_payment"}:
+                booking.status = "cancelled"
+                booking.cancelled_at = now
+                booking.hold_expires_at = None
+                event_type = "slot_cancelled_before_payment"
+            else:
+                booking.status = "cancellation_requested"
+                booking.cancellation_reason = "Cơ sở đã hủy ca hoạt động."
+                event_type = "provider_cancelled_paid_booking_refund_review_required"
+                for payment in db.scalars(select(PaymentTransaction).where(
+                    PaymentTransaction.booking_id == booking.id, PaymentTransaction.status == "succeeded",
+                )).all():
+                    payment.status = "refund_pending"
+            booking.updated_at = now
+            db.add(BookingEvent(
+                id=str(uuid4()), booking_id=booking.id, actor_user_id=user.id,
+                event_type=event_type, from_status=old_booking_status, to_status=booking.status,
+                details={"slot_id": slot.id, "refund_requires_configured_gateway": booking.status == "cancellation_requested"},
+                created_at=now,
+            ))
     elif previous_status == "cancelled" and slot.status != "cancelled":
         active_events = db.scalars(select(Event).where(Event.target_id == slot.id, Event.event_type == "SLOT_CANCELLED", Event.status == "active")).all()
         for event in active_events:

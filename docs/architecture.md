@@ -28,6 +28,10 @@ flowchart TD
     Web -->|address search| Geocoding
     Routing -. tests/demo only .-> Mock[MockRoutingProvider]
     Repo --> Postgres[(PostgreSQL + PostGIS)]
+    Web -->|hold / cancel / status| BookingAPI[Booking API]
+    BookingAPI -->|row lock + availability check| Postgres
+    ProviderUI[Authenticated Provider Portal] -->|accept / reject capacity request| BookingAPI
+    BookingAPI -. disabled until gateway selected .-> PaymentGateway[Payment Gateway Adapter]
     Routes -. future adapter .-> LLM[LLM structured output]
     Postgres -. future events .-> Redis[(Redis)]
 ```

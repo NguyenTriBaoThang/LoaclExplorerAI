@@ -190,6 +190,83 @@ class ExperienceSlot(Base):
     itinerary_stops: Mapped[list["ItineraryStop"]] = relationship(back_populates="slot")
 
 
+class Booking(Base):
+    """A time-limited seat hold and provider-confirmation workflow."""
+
+    __tablename__ = "bookings"
+    __table_args__ = (
+        CheckConstraint("quantity BETWEEN 1 AND 10000", name="ck_bookings_quantity_positive"),
+        CheckConstraint("amount_vnd >= 0", name="ck_bookings_amount_nonnegative"),
+        CheckConstraint(
+            "status IN ('pending_provider', 'awaiting_payment', 'confirmed', 'rejected', 'cancelled', 'expired', 'cancellation_requested', 'refund_pending', 'refunded')",
+            name="ck_bookings_status",
+        ),
+        Index("ix_bookings_slot_status_expiry", "slot_id", "status", "hold_expires_at"),
+    )
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=lambda: str(uuid4()))
+    user_id: Mapped[str] = mapped_column(ForeignKey("users.id", ondelete="RESTRICT"), index=True)
+    provider_id: Mapped[str] = mapped_column(ForeignKey("providers.id", ondelete="RESTRICT"), index=True)
+    itinerary_id: Mapped[str] = mapped_column(ForeignKey("itineraries.id", ondelete="SET NULL"), nullable=True, index=True)
+    itinerary_stop_id: Mapped[str | None] = mapped_column(ForeignKey("itinerary_stops.id", ondelete="SET NULL"), nullable=True, index=True)
+    experience_id: Mapped[str] = mapped_column(ForeignKey("experiences.id", ondelete="RESTRICT"), index=True)
+    slot_id: Mapped[str] = mapped_column(ForeignKey("experience_slots.id", ondelete="RESTRICT"), index=True)
+    quantity: Mapped[int] = mapped_column(Integer)
+    amount_vnd: Mapped[int] = mapped_column(BigInteger)
+    currency: Mapped[str] = mapped_column(String(3), default="VND")
+    status: Mapped[str] = mapped_column(String(32), default="pending_provider", index=True)
+    hold_expires_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True, index=True)
+    provider_confirmed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    confirmed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    cancelled_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    cancellation_reason: Mapped[str | None] = mapped_column(String(1000), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow, index=True)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow, onupdate=utcnow)
+
+
+class PaymentTransaction(Base):
+    """Payment ledger; records real gateway references only (never client claims)."""
+
+    __tablename__ = "payment_transactions"
+    __table_args__ = (
+        CheckConstraint("amount_vnd >= 0", name="ck_payment_amount_nonnegative"),
+        CheckConstraint(
+            "status IN ('created', 'pending', 'succeeded', 'failed', 'refund_pending', 'refunded')",
+            name="ck_payment_transaction_status",
+        ),
+        UniqueConstraint("provider", "provider_reference", name="uq_payment_provider_reference"),
+        UniqueConstraint("idempotency_key", name="uq_payment_idempotency_key"),
+    )
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=lambda: str(uuid4()))
+    booking_id: Mapped[str] = mapped_column(ForeignKey("bookings.id", ondelete="RESTRICT"), index=True)
+    provider: Mapped[str] = mapped_column(String(40), default="unconfigured")
+    provider_reference: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    idempotency_key: Mapped[str] = mapped_column(String(100))
+    amount_vnd: Mapped[int] = mapped_column(BigInteger)
+    currency: Mapped[str] = mapped_column(String(3), default="VND")
+    status: Mapped[str] = mapped_column(String(24), default="created", index=True)
+    checkout_url: Mapped[str | None] = mapped_column(String(2000), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow, onupdate=utcnow)
+
+
+class BookingEvent(Base):
+    """Append-only audit trail for reservation, cancellation and payment transitions."""
+
+    __tablename__ = "booking_events"
+    __table_args__ = (Index("ix_booking_events_booking_created", "booking_id", "created_at"),)
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=lambda: str(uuid4()))
+    booking_id: Mapped[str] = mapped_column(ForeignKey("bookings.id", ondelete="CASCADE"), index=True)
+    actor_user_id: Mapped[str | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"), nullable=True, index=True)
+    event_type: Mapped[str] = mapped_column(String(60))
+    from_status: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    to_status: Mapped[str] = mapped_column(String(32))
+    details: Mapped[dict] = mapped_column(JSON_DOCUMENT, default=dict)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow, index=True)
+
+
 class IntentSimilarity(Base):
     __tablename__ = "intent_similarities"
     __table_args__ = (

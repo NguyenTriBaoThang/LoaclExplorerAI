@@ -1,5 +1,5 @@
 import axios from 'axios'
-import type { AuthUser, ChatReply, ChatServiceStatus, Experience, GeocodeResponse, GoogleOAuthStatus, Itinerary, POI, RoutingCapabilities } from '../types'
+import type { AuthUser, Booking, ChatReply, ChatServiceStatus, Experience, GeocodeResponse, GoogleOAuthStatus, Itinerary, POI, RoutingCapabilities } from '../types'
 
 export const api = axios.create({ baseURL: '/api', timeout: 30000, withCredentials: true })
 
@@ -66,6 +66,30 @@ export async function submitFeedback(itineraryId: string, rating: number, review
   return data
 }
 
+export async function getMyBookings(itineraryId?: string): Promise<Booking[]> {
+  const { data } = await api.get<Booking[]>('/bookings', { params: itineraryId ? { itinerary_id: itineraryId } : {} })
+  return data
+}
+
+export async function requestBooking(itineraryId: string, stopId: string, quantity: number): Promise<Booking> {
+  const { data } = await api.post<Booking>('/bookings', {
+    itinerary_id: itineraryId,
+    itinerary_stop_id: stopId,
+    quantity,
+  })
+  return data
+}
+
+export async function cancelBooking(bookingId: string, reason = ''): Promise<Booking> {
+  const { data } = await api.post<Booking>(`/bookings/${bookingId}/cancel`, { reason })
+  return data
+}
+
+export async function beginBookingCheckout(bookingId: string): Promise<{ checkout_url: string }> {
+  const { data } = await api.post<{ checkout_url: string }>(`/bookings/${bookingId}/checkout`)
+  return data
+}
+
 export async function searchExperiences(q: string, params: Record<string, string | number | boolean>, semantic = false): Promise<Experience[]> {
   const { data } = await api.get<{ items: Experience[] }>('/experience-search', { params: { ...params, q, semantic } })
   return data.items
@@ -120,6 +144,11 @@ export const providerApi = {
   submitEvidence: async (payload: Record<string, unknown>) => (await api.post('/provider/evidence', payload)).data,
   audit: async () => (await api.get('/provider/audit')).data,
   evidence: async () => (await api.get('/provider/evidence')).data,
+  bookings: async () => (await api.get<Booking[]>('/provider/me/bookings')).data,
+  decideBooking: async (id: string, action: 'accept' | 'reject', note = '') =>
+    (await api.post<Booking>(`/provider/me/bookings/${id}/decision`, { action, note })).data,
+  decideBookingCancellation: async (id: string, action: 'approve' | 'reject', note = '') =>
+    (await api.post<Booking>(`/provider/me/bookings/${id}/cancellation-decision`, { action, note })).data,
 }
 
 export const adminApi = {

@@ -75,6 +75,21 @@ Traveler and provider workflows:
 
 Provider confirmation uses `APP_SIGNING_SECRET`; production must set both `APP_SIGNING_SECRET` and `ADMIN_API_KEY`. Never expose the model key, signing secret, admin key, provider access key, or confirmation tokens in browser logs or public responses.
 
+## Booking and payment boundary
+
+The current booking flow supports verified-data seat holds and explicit provider capacity acceptance. See [booking and payment workflow](bookings-and-payments.md) for statuses and safety rules.
+
+- `POST /api/bookings` — traveler requests seats for an itinerary stop; only verified POI/experience/current capacity is eligible.
+- `GET /api/bookings` and `GET /api/bookings?itinerary_id=...` — signed-in traveler's booking state.
+- `POST /api/bookings/{id}/cancel` — cancels an unpaid hold, or records a cancellation request after payment.
+- `GET /api/bookings/{id}/history` — permission-checked booking event history.
+- `GET /api/payments/status` — gateway readiness (currently disabled).
+- `POST /api/bookings/{id}/checkout` — currently fails closed with `PAYMENT_GATEWAY_NOT_CONFIGURED`; it cannot collect a payment or claim payment success.
+- `GET /api/provider/me/bookings` and `POST /api/provider/me/bookings/{id}/decision` — provider request inbox and accept/reject action.
+- `POST /api/provider/me/bookings/{id}/cancellation-decision` — process an unpaid cancellation; paid refunds stay pending until a configured gateway confirms them.
+
+The database has payment/refund lifecycle ledger fields, but no payment provider is selected yet; real charge, signed webhook settlement, and actual refund execution remain disabled pending that decision and credentials.
+
 ## Lỗi
 
 ```json

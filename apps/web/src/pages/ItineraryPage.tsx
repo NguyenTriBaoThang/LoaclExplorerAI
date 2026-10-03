@@ -25,17 +25,21 @@ import {
   acceptReplan,
   api,
   apiErrorMessage,
+  beginBookingCheckout,
+  cancelBooking,
   createShareLink,
   getItinerary,
   getItineraryVersions,
+  getMyBookings,
   getNotifications,
   requestReplanAdvice,
+  requestBooking,
   submitFeedback,
 } from '../api/client'
 import { MapAdapter, type MapPoint } from '../components/map/MapAdapter'
 import { SimulatedBadge } from '../components/common/StatusBadge'
 import { TiltCard3D } from '../components/3d/TiltCard3D'
-import type { Itinerary } from '../types'
+import type { Booking, Itinerary } from '../types'
 import { useAuth } from '../auth'
 import { useTranslation } from '../i18n'
 
@@ -84,6 +88,20 @@ const dateTimeLabel = (value: string, locale: string) =>
     timeZone: 'Asia/Ho_Chi_Minh',
   }).format(new Date(value))
 
+const bookingStatusLabel = (status: Booking['status'], locale: string) => {
+  const vi: Record<Booking['status'], string> = {
+    pending_provider: 'Chờ cơ sở xác nhận', awaiting_payment: 'Cơ sở đã xác nhận · chờ thanh toán',
+    confirmed: 'Đã xác nhận', rejected: 'Cơ sở từ chối', cancelled: 'Đã hủy', expired: 'Hết hạn giữ chỗ',
+    cancellation_requested: 'Đang yêu cầu hủy/hoàn tiền', refund_pending: 'Chờ xử lý hoàn tiền', refunded: 'Đã hoàn tiền',
+  }
+  const en: Record<Booking['status'], string> = {
+    pending_provider: 'Waiting for provider', awaiting_payment: 'Provider confirmed · payment pending',
+    confirmed: 'Confirmed', rejected: 'Rejected by provider', cancelled: 'Cancelled', expired: 'Hold expired',
+    cancellation_requested: 'Cancellation/refund requested', refund_pending: 'Refund pending', refunded: 'Refunded',
+  }
+  return (locale === 'en' ? en : vi)[status]
+}
+
 export function ItineraryPage() {
   const { t, locale } = useTranslation()
   const { id = '' } = useParams()
@@ -119,6 +137,9 @@ export function ItineraryPage() {
   const [reviewText, setReviewText] = useState('')
   const [rating, setRating] = useState(5)
   const [notice, setNotice] = useState('')
+  const [bookings, setBookings] = useState<Booking[]>([])
+  const [bookingQuantity, setBookingQuantity] = useState(1)
+  const [bookingBusyStopId, setBookingBusyStopId] = useState('')
   const [advice, setAdvice] = useState<
     Record<
       string,
@@ -149,6 +170,10 @@ export function ItineraryPage() {
   }, [id])
 
   useEffect(() => {
+    if (itinerary?.group_size) setBookingQuantity(itinerary.group_size)
+  }, [itinerary?.itinerary_id])
+
+  useEffect(() => {
     const timer = window.setInterval(() => setCurrentTimeMs(Date.now()), 30_000)
     return () => window.clearInterval(timer)
   }, [])
@@ -157,6 +182,23 @@ export function ItineraryPage() {
     if (!user || !id) return
     getItineraryVersions(id).then(setVersions).catch(() => setVersions([]))
   }, [id, user?.id])
+
+  useEffect(() => {
+    if (!user || user.role !== 'traveler' || !id) {
+      setBookings([])
+      return
+    }
+    let active = true
+    const refresh = () => getMyBookings(id).then((rows) => {
+      if (active) setBookings(rows)
+    }).catch(() => undefined)
+    void refresh()
+    const timer = window.setInterval(refresh, 15000)
+    return () => {
+      active = false
+      window.clearInterval(timer)
+    }
+  }, [id, user?.id, user?.role])
 
   useEffect(() => {
     if (!user || !id) return
@@ -199,6 +241,44 @@ export function ItineraryPage() {
       await submitFeedback(id, rating, reviewText)
       setReviewText('')
       setNotice(locale === 'en' ? 'Review submitted successfully! Thank you for your feedback.' : 'Đã gửi đánh giá thành công! Cảm ơn bạn đã phản hồi.')
+    } catch (reason) {
+      setNotice(apiErrorMessage(reason))
+    }
+  }
+
+  async function holdStop(stopId: string) {
+    setBookingBusyStopId(stopId)
+    try {
+      const booking = await requestBooking(id, stopId, bookingQuantity)
+      setBookings((rows) => [booking, ...rows.filter((row) => row.itinerary_stop_id !== stopId)])
+      setNotice(locale === 'en'
+        ? 'Seat hold requested. It is not a confirmed booking until the provider responds.'
+        : 'Đã gửi yêu cầu giữ chỗ. Đây chưa phải đặt chỗ xác nhận cho tới khi cơ sở phản hồi.')
+    } catch (reason) {
+      setNotice(apiErrorMessage(reason))
+    } finally {
+      setBookingBusyStopId('')
+    }
+  }
+
+  async function cancelReservation(booking: Booking) {
+    setBookingBusyStopId(booking.itinerary_stop_id || '')
+    try {
+      const updated = await cancelBooking(booking.id)
+      setBookings((rows) => rows.map((row) => row.id === updated.id ? updated : row))
+      setNotice(updated.status === 'cancellation_requested'
+        ? (locale === 'en' ? 'Cancellation requested; refund is not complete yet.' : 'Đã gửi yêu cầu hủy; khoản hoàn tiền chưa được xử lý.')
+        : (locale === 'en' ? 'Reservation request cancelled.' : 'Đã hủy yêu cầu giữ chỗ.'))
+    } catch (reason) {
+      setNotice(apiErrorMessage(reason))
+    } finally {
+      setBookingBusyStopId('')
+    }
+  }
+
+  async function checkoutBooking(booking: Booking) {
+    try {
+      await beginBookingCheckout(booking.id)
     } catch (reason) {
       setNotice(apiErrorMessage(reason))
     }
@@ -295,6 +375,12 @@ export function ItineraryPage() {
     }))
 
   const activeStop = itinerary.stops.find((stop) => stop.experience_id === selectedId)
+  const latestBookingByStop = new Map<string, Booking>()
+  for (const booking of bookings) {
+    if (booking.itinerary_stop_id && !latestBookingByStop.has(booking.itinerary_stop_id)) {
+      latestBookingByStop.set(booking.itinerary_stop_id, booking)
+    }
+  }
   const lastStop = itinerary.stops[itinerary.stops.length - 1]
   const tripStartAt = itinerary.start_at || itinerary.stops[0]?.start_at
   const estimatedReturnAt = itinerary.estimated_return_at || lastStop?.end_at
@@ -705,6 +791,60 @@ export function ItineraryPage() {
                         </div>
                       ))}
                     </div>
+
+                    {user?.role === 'traveler' && (() => {
+                      const booking = latestBookingByStop.get(stop.id)
+                      const canCancel = booking && ['pending_provider', 'awaiting_payment', 'confirmed'].includes(booking.status)
+                      const canRequestAgain = !booking || ['rejected', 'cancelled', 'expired', 'refunded'].includes(booking.status)
+                      return (
+                        <div className="booking-inline-panel" onClick={(event) => event.stopPropagation()}>
+                          {booking ? (
+                            <div className="booking-inline-status">
+                              <strong>{locale === 'en' ? 'Reservation' : 'Yêu cầu đặt chỗ'}: {bookingStatusLabel(booking.status, locale)}</strong>
+                              <span>{booking.quantity} {locale === 'en' ? 'guest(s)' : 'khách'} · {booking.amount_vnd.toLocaleString('vi-VN')}₫</span>
+                              {booking.hold_expires_at && ['pending_provider', 'awaiting_payment'].includes(booking.status) && (
+                                <small>{locale === 'en' ? 'Hold expires' : 'Giữ chỗ đến'}: {dateTimeLabel(booking.hold_expires_at, locale)}</small>
+                              )}
+                              {booking.cancellation_reason && <small>{booking.cancellation_reason}</small>}
+                            </div>
+                          ) : (
+                            <strong>{locale === 'en' ? 'Ask provider to confirm seats' : 'Yêu cầu cơ sở xác nhận chỗ'}</strong>
+                          )}
+                          {booking?.status === 'awaiting_payment' && (
+                            <button type="button" className="btn-secondary-3d btn-sm" onClick={() => void checkoutBooking(booking)}>
+                              {locale === 'en' ? 'Continue to payment' : 'Tiếp tục thanh toán'}
+                            </button>
+                          )}
+                          {canCancel && booking && (
+                            <button type="button" className="btn-secondary-3d btn-sm" disabled={bookingBusyStopId === stop.id} onClick={() => void cancelReservation(booking)}>
+                              {locale === 'en' ? 'Request cancellation' : 'Yêu cầu hủy'}
+                            </button>
+                          )}
+                          {canRequestAgain && stop.data_status === 'verified' && (
+                            <div className="booking-inline-controls">
+                              <label>
+                                {locale === 'en' ? 'Guests' : 'Số khách'}
+                                <input type="number" min={1} max={itinerary.group_size ?? 50} value={bookingQuantity} onChange={(event) => setBookingQuantity(Math.max(1, Math.min(itinerary.group_size ?? 50, Number(event.target.value) || 1)))} />
+                              </label>
+                              <button type="button" className="btn-primary-3d btn-sm" disabled={bookingBusyStopId === stop.id} onClick={() => void holdStop(stop.id)}>
+                                {bookingBusyStopId === stop.id
+                                  ? (locale === 'en' ? 'Sending…' : 'Đang gửi…')
+                                  : (locale === 'en' ? 'Request temporary hold' : 'Yêu cầu giữ chỗ tạm thời')}
+                              </button>
+                            </div>
+                          )}
+                          {canRequestAgain && stop.data_status === 'verified' && (
+                            <small>{locale === 'en' ? 'The app holds seats for 15 minutes while the provider responds; this is not confirmed until they accept.' : 'Ứng dụng giữ chỗ tạm 15 phút trong khi chờ cơ sở phản hồi; chưa xác nhận cho tới khi cơ sở chấp nhận.'}</small>
+                          )}
+                          {canRequestAgain && stop.data_status !== 'verified' && (
+                            <small>{locale === 'en' ? 'Booking is disabled for demo or unverified catalog data.' : 'Chưa thể đặt chỗ với dữ liệu trình diễn hoặc chưa được xác minh.'}</small>
+                          )}
+                          {(booking?.amount_vnd || stop.cost_vnd) > 0 && (
+                            <small>{locale === 'en' ? 'Payment is unavailable until the project configures a gateway; no charge is made now.' : 'Chưa thu tiền: nhóm chưa cấu hình cổng thanh toán.'}</small>
+                          )}
+                        </div>
+                      )
+                    })()}
                   </div>
                 </article>
 

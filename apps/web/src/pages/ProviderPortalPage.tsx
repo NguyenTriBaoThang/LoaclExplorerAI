@@ -10,7 +10,7 @@ import {
   X,
 } from 'lucide-react'
 import { getPOIs, providerApi } from '../api/client'
-import type { POI } from '../types'
+import type { Booking, POI } from '../types'
 
 type SlotItem = {
   id: string
@@ -70,6 +70,7 @@ const blank: Draft = {
 
 export function ProviderPortalPage() {
   const [items, setItems] = useState<ExperienceItem[]>([])
+  const [bookings, setBookings] = useState<Booking[]>([])
   const [pois, setPois] = useState<POI[]>([])
   const [providerPois, setProviderPois] = useState<Array<POI & { data_revision: number }>>([])
   const [evidenceItems, setEvidenceItems] = useState<Array<{
@@ -123,18 +124,20 @@ export function ProviderPortalPage() {
 
   async function load() {
     try {
-      const [experiences, points, history, ownedPoints, sources] = await Promise.all([
+      const [experiences, points, history, ownedPoints, sources, reservationRows] = await Promise.all([
         providerApi.experiences(),
         getPOIs(),
         providerApi.audit(),
         providerApi.pois(),
         providerApi.evidence(),
+        providerApi.bookings(),
       ])
       setItems(experiences)
       setPois(points)
       setAudit(history)
       setProviderPois(ownedPoints)
       setEvidenceItems(sources)
+      setBookings(reservationRows)
       setError('')
       const verifiedPointId = points.find((point) => point.data_mode === 'real')?.id
         || ownedPoints.find((point) => point.verification_status === 'verified')?.id
@@ -147,6 +150,36 @@ export function ProviderPortalPage() {
   useEffect(() => {
     void load()
   }, [])
+
+  async function decideBooking(id: string, action: 'accept' | 'reject') {
+    setError('')
+    setNotice('')
+    try {
+      const updated = await providerApi.decideBooking(id, action)
+      setNotice(action === 'accept'
+        ? (updated.amount_vnd === 0
+          ? 'Đã xác nhận đặt chỗ miễn phí.'
+          : 'Đã xác nhận năng lực phục vụ và giữ chỗ tạm thời. Khách chưa thanh toán; cổng thanh toán của dự án chưa được cấu hình.')
+        : 'Đã từ chối yêu cầu và giải phóng chỗ giữ tạm thời.')
+      await load()
+    } catch {
+      setError('Không thể cập nhật yêu cầu đặt chỗ. Hãy kiểm tra hạn giữ chỗ và xác nhận lại sức chứa của ca.')
+    }
+  }
+
+  async function decideBookingCancellation(id: string, action: 'approve' | 'reject') {
+    setError('')
+    setNotice('')
+    try {
+      const updated = await providerApi.decideBookingCancellation(id, action)
+      setNotice(updated.status === 'cancelled'
+        ? 'Đã xác nhận hủy đặt chỗ chưa thanh toán.'
+        : 'Đã từ chối yêu cầu hủy; đặt chỗ vẫn giữ trạng thái xác nhận.')
+      await load()
+    } catch {
+      setError('Chưa xử lý được yêu cầu. Nếu booking đã thanh toán, dự án cần tích hợp cổng thanh toán để thực hiện hoàn tiền thật; không đánh dấu hoàn khi chưa có kết quả từ cổng.')
+    }
+  }
 
   function beginEdit(item: ExperienceItem) {
     setEditing(item.id)
@@ -413,6 +446,50 @@ export function ProviderPortalPage() {
           <span>{error}</span>
         </div>
       )}
+
+      <section className="portal-experiences-section booking-provider-section">
+        <h2 className="section-title-3d">Yêu cầu đặt chỗ ({bookings.filter((row) => row.status === 'pending_provider').length} đang chờ)</h2>
+        <p className="page-subtext-3d">Chỉ chấp nhận sau khi kiểm tra lại số chỗ. Yêu cầu có thời hạn; khách chỉ được thông báo đã đặt thành công sau khi thanh toán hoặc khi ca miễn phí được cơ sở xác nhận.</p>
+        {bookings.length ? (
+          <div className="portal-exp-list">
+            {bookings.map((booking) => (
+              <article key={booking.id} className="portal-exp-card booking-provider-card">
+                <div className="portal-exp-top">
+                  <div className="portal-exp-meta-left">
+                    <span className="portal-status-badge">{booking.status}</span>
+                    <h3>{booking.experience_title}</h3>
+                    <p className="portal-exp-poi">
+                      {booking.quantity} khách · {booking.amount_vnd.toLocaleString('vi-VN')}₫ · {booking.slot_start_at ? new Date(booking.slot_start_at).toLocaleString('vi-VN') : 'Không rõ giờ'}
+                    </p>
+                    {booking.hold_expires_at && <small>Hạn giữ chỗ: {new Date(booking.hold_expires_at).toLocaleString('vi-VN')}</small>}
+                    {booking.status === 'awaiting_payment' && <small>Đã xác nhận sức chứa; chưa có thanh toán và chưa phải đơn hoàn tất.</small>}
+                    {booking.status === 'cancellation_requested' && <small>Khách yêu cầu hủy. Nếu giao dịch đã thu tiền, cần cổng thanh toán để hoàn tiền.</small>}
+                    {booking.status === 'refund_pending' && <small>Hoàn tiền đang chờ xử lý bởi cổng thanh toán.</small>}
+                  </div>
+                  {booking.status === 'pending_provider' && (
+                    <div className="portal-exp-actions">
+                      <button type="button" className="btn-primary-3d btn-sm" onClick={() => void decideBooking(booking.id, 'accept')}>Xác nhận chỗ</button>
+                      <button type="button" className="btn-secondary-3d btn-sm" onClick={() => void decideBooking(booking.id, 'reject')}>Từ chối</button>
+                    </div>
+                  )}
+                  {booking.status === 'cancellation_requested' && (
+                    <div className="portal-exp-actions">
+                      <button type="button" className="btn-primary-3d btn-sm" onClick={() => void decideBookingCancellation(booking.id, 'approve')}>
+                        {booking.amount_vnd > 0 ? 'Duyệt hủy / xử lý hoàn' : 'Duyệt hủy'}
+                      </button>
+                      {booking.slot_status !== 'cancelled' && (
+                        <button type="button" className="btn-secondary-3d btn-sm" onClick={() => void decideBookingCancellation(booking.id, 'reject')}>Từ chối hủy</button>
+                      )}
+                    </div>
+                  )}
+                </div>
+              </article>
+            ))}
+          </div>
+        ) : (
+          <p className="no-slots-hint">Chưa có yêu cầu đặt chỗ nào.</p>
+        )}
+      </section>
 
       {showPoiForm && (
         <section className="form-card-3d mb-8 animate-fadeIn">

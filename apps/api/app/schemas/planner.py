@@ -111,6 +111,7 @@ class PlanResponse(BaseModel):
     feasibility_status: str
     estimated_cost_vnd: int
     total_travel_min: int
+    group_size: int = Field(ge=1)
     start_at: datetime | None = None
     return_deadline: datetime | None = None
     estimated_return_at: datetime | None = None
