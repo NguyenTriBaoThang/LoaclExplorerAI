@@ -12,6 +12,8 @@ services:
     build:
       context: ./apps/api
       dockerfile: Dockerfile
+      args:
+        INSTALL_E5: ${INSTALL_E5:-false}
     ports:
       - "8000:8000"
     environment:
@@ -26,10 +28,18 @@ services:
       GOONG_TIMEOUT_SECONDS: ${GOONG_TIMEOUT_SECONDS:-8}
       GOONG_ETA_TTL_SECONDS: ${GOONG_ETA_TTL_SECONDS:-300}
       GEOCODE_CACHE_TTL_SECONDS: ${GEOCODE_CACHE_TTL_SECONDS:-86400}
-      OPENAI_API_KEY: ${OPENAI_API_KEY:?Set OPENAI_API_KEY to enable AI workflows}
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
       OPENAI_BASE_URL: ${OPENAI_BASE_URL:-https://api.openai.com/v1}
       OPENAI_MODEL: ${OPENAI_MODEL:-gpt-4o-mini}
       OPENAI_TIMEOUT_SECONDS: ${OPENAI_TIMEOUT_SECONDS:-30}
+      LLM_FALLBACK_ENABLED: ${LLM_FALLBACK_ENABLED:-true}
+      GOOGLE_CLIENT_ID: ${GOOGLE_CLIENT_ID:-}
+      GOOGLE_CLIENT_SECRET: ${GOOGLE_CLIENT_SECRET:-}
+      GOOGLE_REDIRECT_URI: ${GOOGLE_REDIRECT_URI:-https://localhost:8000/api/auth/google/callback}
+      WEB_APP_URL: ${WEB_APP_URL:-https://localhost}
+      E5_MODEL_PATH: ${E5_MODEL_PATH:-/models/e5}
       ADMIN_API_KEY: ${ADMIN_API_KEY:?Set ADMIN_API_KEY for protected AI routes}
       APP_SIGNING_SECRET: ${APP_SIGNING_SECRET:?Set APP_SIGNING_SECRET for provider confirmation}
     restart: always
+    volumes:
+      - ./models:/models:ro

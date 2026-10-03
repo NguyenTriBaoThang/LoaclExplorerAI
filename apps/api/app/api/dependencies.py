@@ -17,10 +17,10 @@ def get_planner_service(db: Session = Depends(get_db)) -> PlannerService:
 
 
 def get_llm_provider() -> StructuredOutputProvider:
-    if not settings.openai_api_key:
+    if not settings.llm_is_configured:
         return NotConfiguredLLMProvider()
     return OpenAICompatibleLLMProvider(
-        api_key=settings.openai_api_key,
+        api_key=settings.openai_api_key.strip(),
         model_name=settings.openai_model,
         base_url=settings.openai_base_url,
         timeout_seconds=settings.openai_timeout_seconds,

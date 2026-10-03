@@ -1,7 +1,7 @@
 import base64
 import hashlib
 import secrets
-from urllib.parse import urlencode
+from urllib.parse import urlencode, urlsplit
 
 import httpx
 from fastapi import APIRouter, Depends, HTTPException, Request, Response
@@ -37,7 +37,32 @@ def _cookie_flags(request: Request) -> dict:
 
 
 def _google_configured() -> bool:
-    return bool(settings.google_client_id and settings.google_client_secret)
+    return _google_configuration_issue() is None
+
+
+def _google_configuration_issue() -> str | None:
+    client_id = (settings.google_client_id or "").strip()
+    client_secret = (settings.google_client_secret or "").strip()
+    if not client_id or not client_secret:
+        return "Set GOOGLE_CLIENT_ID and GOOGLE_CLIENT_SECRET to enable Google sign-in."
+    try:
+        callback = urlsplit(settings.google_redirect_uri)
+        valid_callback = (
+            callback.scheme in {"http", "https"}
+            and bool(callback.hostname)
+            and callback.username is None
+            and callback.password is None
+            and callback.path == "/api/auth/google/callback"
+            and not callback.query
+            and not callback.fragment
+        )
+    except ValueError:
+        valid_callback = False
+    if not valid_callback:
+        return "GOOGLE_REDIRECT_URI must be an absolute URL ending exactly in /api/auth/google/callback."
+    if settings.app_env.lower() not in {"development", "test"} and callback.scheme != "https":
+        return "GOOGLE_REDIRECT_URI must use HTTPS outside development and tests."
+    return None
 
 
 @router.post("/register", response_model=UserRead, status_code=201)
@@ -93,13 +118,14 @@ def logout(response: Response):
 
 @router.get("/google/start")
 def google_start(request: Request):
-    if not _google_configured():
-        raise HTTPException(status_code=503, detail={"code": "GOOGLE_AUTH_NOT_CONFIGURED", "message": "Configure GOOGLE_CLIENT_ID and GOOGLE_CLIENT_SECRET."})
+    issue = _google_configuration_issue()
+    if issue:
+        raise HTTPException(status_code=503, detail={"code": "GOOGLE_AUTH_NOT_CONFIGURED", "message": issue})
     state = secrets.token_urlsafe(32)
     verifier = secrets.token_urlsafe(64)
     challenge = base64.urlsafe_b64encode(hashlib.sha256(verifier.encode()).digest()).rstrip(b"=").decode("ascii")
     query = urlencode({
-        "client_id": settings.google_client_id,
+        "client_id": settings.google_client_id.strip(),
         "redirect_uri": settings.google_redirect_uri,
         "response_type": "code",
         "scope": "openid email profile",
@@ -115,8 +141,20 @@ def google_start(request: Request):
     return response
 
 
+@router.get("/google/status")
+def google_status():
+    issue = _google_configuration_issue()
+    return {
+        "enabled": issue is None,
+        "redirect_uri": settings.google_redirect_uri,
+        "configuration_message": issue,
+    }
+
+
 @router.get("/google/callback")
 def google_callback(request: Request, db: Session = Depends(get_db)):
+    if not _google_configured():
+        return RedirectResponse(f"{settings.web_app_url}/login?error=google_not_configured", status_code=303)
     code = request.query_params.get("code")
     returned_state = request.query_params.get("state")
     state_cookie = request.cookies.get("le_google_state")
@@ -126,8 +164,8 @@ def google_callback(request: Request, db: Session = Depends(get_db)):
     try:
         token_response = httpx.post(GOOGLE_TOKEN_ENDPOINT, data={
             "code": code,
-            "client_id": settings.google_client_id,
-            "client_secret": settings.google_client_secret,
+            "client_id": settings.google_client_id.strip(),
+            "client_secret": settings.google_client_secret.strip(),
             "redirect_uri": settings.google_redirect_uri,
             "grant_type": "authorization_code",
             "code_verifier": verifier,

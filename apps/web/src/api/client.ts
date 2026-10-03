@@ -1,5 +1,5 @@
 import axios from 'axios'
-import type { AuthUser, ChatReply, Experience, GeocodeResponse, Itinerary, POI, RoutingCapabilities } from '../types'
+import type { AuthUser, ChatReply, ChatServiceStatus, Experience, GeocodeResponse, GoogleOAuthStatus, Itinerary, POI, RoutingCapabilities } from '../types'
 
 export const api = axios.create({ baseURL: '/api', timeout: 30000, withCredentials: true })
 
@@ -24,6 +24,16 @@ export async function logout(): Promise<void> {
 
 export async function sendChatMessage(message: string, conversation_id: string): Promise<ChatReply> {
   const { data } = await api.post<ChatReply>('/chat/message', { message, conversation_id })
+  return data
+}
+
+export async function getChatServiceStatus(): Promise<ChatServiceStatus> {
+  const { data } = await api.get<ChatServiceStatus>('/chat/status')
+  return data
+}
+
+export async function getGoogleOAuthStatus(): Promise<GoogleOAuthStatus> {
+  const { data } = await api.get<GoogleOAuthStatus>('/auth/google/status')
   return data
 }
 

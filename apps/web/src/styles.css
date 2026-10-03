@@ -4171,6 +4171,19 @@ a {
   transform: translateY(-2px);
 }
 
+.google-oauth-btn.google-oauth-disabled {
+  opacity: 0.58;
+  cursor: not-allowed;
+}
+
+.auth-oauth-hint {
+  margin: 0.75rem 0 0;
+  color: #a8b4c4;
+  font-size: 0.75rem;
+  line-height: 1.5;
+  overflow-wrap: anywhere;
+}
+
 .auth-card-footer {
   text-align: center;
   margin-top: 24px;

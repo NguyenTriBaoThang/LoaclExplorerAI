@@ -1,25 +1,71 @@
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, HTTPException
 
-from app.adapters.llm.provider import StructuredOutputProvider
+from app.adapters.llm.provider import (
+    LLMNotConfigured,
+    LLMProviderError,
+    StructuredOutputProvider,
+)
 from app.api.dependencies import get_llm_provider
+from app.core.config import settings
 from app.prompts.registry import catalog
 from app.schemas.ai import ChatMessage, StructuredConstraints
-from app.services.prompt_service import PromptRunner
+from app.services.offline_chat_fallback import build_offline_constraints
+from app.services.prompt_service import InvalidStructuredOutput, PromptRunner
 
 router = APIRouter(prefix="/api/chat", tags=["chat"])
 
 
 @router.post("/message")
 def chat_message(payload: ChatMessage, provider: StructuredOutputProvider = Depends(get_llm_provider)):
-    constraints = PromptRunner(provider).run(
-        "CONVERSATION_PARSER",
-        {"message": payload.message, "conversation_id": payload.conversation_id},
-        StructuredConstraints,
-    )
+    try:
+        constraints = PromptRunner(provider).run(
+            "CONVERSATION_PARSER",
+            {"message": payload.message, "conversation_id": payload.conversation_id},
+            StructuredConstraints,
+        )
+    except LLMNotConfigured:
+        return _fallback_response(payload, "llm_not_configured")
+    except LLMProviderError:
+        return _fallback_response(payload, "llm_unavailable")
+    except InvalidStructuredOutput:
+        return _fallback_response(payload, "invalid_model_output")
+
     return {
         "status": "parsed",
+        "assistant_mode": "openai_compatible",
         "conversation_id": payload.conversation_id,
         "prompt_version": catalog.version,
+        "fallback_version": None,
+        "fallback_reason": None,
         "reply": constraints.clarification_question_vi or "Mình đã ghi nhận các ràng buộc chuyến đi.",
+        "structured_constraints": constraints.model_dump(),
+    }
+
+
+@router.get("/status")
+def chat_status():
+    configured = settings.llm_is_configured
+    return {
+        "assistant_mode": "openai_compatible" if configured else "local_fallback",
+        "llm_configured": configured,
+        "fallback_available": settings.llm_fallback_enabled,
+        "fallback_version": "1.0.0",
+    }
+
+
+def _fallback_response(payload: ChatMessage, reason: str) -> dict:
+    if not settings.llm_fallback_enabled:
+        if reason == "llm_not_configured":
+            raise HTTPException(status_code=503, detail={"code": "LLM_NOT_CONFIGURED", "message": "Configure OPENAI_API_KEY or enable LLM_FALLBACK_ENABLED."})
+        raise HTTPException(status_code=502, detail={"code": "LLM_PROVIDER_ERROR", "message": "The external LLM is unavailable and the local fallback is disabled."})
+    constraints, reply = build_offline_constraints(payload.message, reason)
+    return {
+        "status": "fallback",
+        "assistant_mode": "local_fallback",
+        "conversation_id": payload.conversation_id,
+        "prompt_version": None,
+        "fallback_version": "1.0.0",
+        "fallback_reason": reason,
+        "reply": reply,
         "structured_constraints": constraints.model_dump(),
     }

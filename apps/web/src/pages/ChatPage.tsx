@@ -25,8 +25,8 @@ import {
   Info,
 } from 'lucide-react'
 import { useNavigate } from 'react-router-dom'
-import { api, apiErrorMessage, createItinerary, getRoutingCapabilities, sendChatMessage } from '../api/client'
-import type { ChatConstraints, POI, RoutingCapabilities } from '../types'
+import { api, apiErrorMessage, createItinerary, getChatServiceStatus, getRoutingCapabilities, sendChatMessage } from '../api/client'
+import type { ChatConstraints, ChatServiceStatus, POI, RoutingCapabilities } from '../types'
 import { useTranslation } from '../i18n'
 
 type ChatLine = {
@@ -35,6 +35,7 @@ type ChatLine = {
   text: string
   time?: string
   snapshot?: Partial<ChatConstraints>
+  assistantMode?: 'openai_compatible' | 'local_fallback'
 }
 
 const localDate = (date: Date) =>
@@ -158,6 +159,7 @@ export function ChatPage() {
   const [pois, setPois] = useState<POI[]>([])
   const [poiError, setPoiError] = useState('')
   const [routingCapabilities, setRoutingCapabilities] = useState<RoutingCapabilities | null>(null)
+  const [chatServiceStatus, setChatServiceStatus] = useState<ChatServiceStatus | null>(null)
   const [date, setDate] = useState(() => {
     const tomorrow = new Date()
     tomorrow.setDate(tomorrow.getDate() + 1)
@@ -180,6 +182,14 @@ export function ChatPage() {
     api.get<POI[]>('/pois')
       .then(({ data }) => { if (active) setPois(data) })
       .catch((reason: unknown) => { if (active) setPoiError(getChatError(reason)) })
+    return () => { active = false }
+  }, [])
+
+  useEffect(() => {
+    let active = true
+    void getChatServiceStatus()
+      .then((status) => { if (active) setChatServiceStatus(status) })
+      .catch(() => { if (active) setChatServiceStatus(null) })
     return () => { active = false }
   }, [])
 
@@ -311,6 +321,7 @@ export function ChatPage() {
           text: result.reply || result.structured_constraints.clarification_question_vi || t('chat.constraintsDesc'),
           time: formatTimeOnly(new Date(), locale),
           snapshot: result.structured_constraints,
+          assistantMode: result.assistant_mode,
         },
       ])
     } catch (reason) {
@@ -477,7 +488,15 @@ export function ChatPage() {
               </span>
             </div>
             <div className="chat-topbar-badges">
-              <span className="chat-prompt-version">NLU · PRD 3.0</span>
+              <span className="chat-prompt-version">
+                {chatServiceStatus?.assistant_mode === 'openai_compatible'
+                  ? (locale === 'en' ? 'LLM · OpenAI-compatible' : 'LLM · OpenAI-compatible')
+                  : chatServiceStatus?.fallback_available
+                    ? (locale === 'en' ? 'Offline fallback available' : 'Có dự phòng ngoại tuyến')
+                    : chatServiceStatus
+                      ? (locale === 'en' ? 'AI parsing unavailable' : 'Bộ phân tích AI chưa sẵn sàng')
+                      : (locale === 'en' ? 'AI status unknown' : 'Chưa xác định trạng thái AI')}
+              </span>
             </div>
           </div>
 
@@ -498,6 +517,12 @@ export function ChatPage() {
                   <div className={`chat-bubble ${message.role === 'user' ? 'chat-bubble-user' : 'chat-bubble-assistant'}`}>
                     <FormattedChatMessage content={message.text} />
                   </div>
+
+                  {message.assistantMode === 'local_fallback' && (
+                    <span className="chat-prompt-version">
+                      {locale === 'en' ? 'Offline rule-based fallback · verify extracted values' : 'Dự phòng bằng quy tắc ngoại tuyến · hãy kiểm tra dữ liệu'}
+                    </span>
+                  )}
 
                   {/* AI Snapshot Pills if constraints detected on assistant turn */}
                   {message.role === 'assistant' && message.snapshot && (

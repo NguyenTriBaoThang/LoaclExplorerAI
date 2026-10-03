@@ -1,4 +1,4 @@
-import { useState, type FormEvent } from 'react'
+import { useEffect, useState, type FormEvent } from 'react'
 import { Link, useLocation, useNavigate, useSearchParams } from 'react-router-dom'
 import {
   Compass,
@@ -10,9 +10,10 @@ import {
   EyeOff,
   AlertCircle,
 } from 'lucide-react'
-import { api, apiErrorMessage, login, registerAccount } from '../api/client'
+import { api, apiErrorMessage, getGoogleOAuthStatus, login, registerAccount } from '../api/client'
 import { useAuth } from '../auth'
 import { useTranslation } from '../i18n'
+import type { GoogleOAuthStatus } from '../types'
 
 export function AuthPage({ register = false }: { register?: boolean }) {
   const { t, locale } = useTranslation()
@@ -22,11 +23,20 @@ export function AuthPage({ register = false }: { register?: boolean }) {
   const [showPassword, setShowPassword] = useState(false)
   const [error, setError] = useState('')
   const [busy, setBusy] = useState(false)
+  const [googleOAuth, setGoogleOAuth] = useState<GoogleOAuthStatus | null>(null)
   const { setUser } = useAuth()
   const navigate = useNavigate()
   const location = useLocation()
   const [searchParams] = useSearchParams()
   const destination = (location.state as { from?: string } | null)?.from || '/'
+
+  useEffect(() => {
+    let active = true
+    void getGoogleOAuthStatus()
+      .then((status) => { if (active) setGoogleOAuth(status) })
+      .catch(() => { if (active) setGoogleOAuth(null) })
+    return () => { active = false }
+  }, [])
 
   async function submit(event: FormEvent) {
     event.preventDefault()
@@ -176,8 +186,12 @@ export function AuthPage({ register = false }: { register?: boolean }) {
 
         {/* Google OAuth Button */}
         <a
-          className="google-oauth-btn"
-          href={`${api.defaults.baseURL}/auth/google/start`}
+          className={`google-oauth-btn ${googleOAuth?.enabled === false ? 'google-oauth-disabled' : ''}`}
+          href={googleOAuth?.enabled === false ? undefined : `${api.defaults.baseURL}/auth/google/start`}
+          aria-disabled={googleOAuth?.enabled === false}
+          onClick={(event) => {
+            if (googleOAuth?.enabled === false) event.preventDefault()
+          }}
         >
           <svg className="google-icon" viewBox="0 0 24 24" width="18" height="18">
             <path
@@ -199,6 +213,13 @@ export function AuthPage({ register = false }: { register?: boolean }) {
           </svg>
           <span>{t('auth.googleLogin')}</span>
         </a>
+        {googleOAuth?.enabled === false && (
+          <p className="auth-oauth-hint">
+            {googleOAuth.configuration_message || (locale === 'en' ? 'Google sign-in is not configured.' : 'Chưa cấu hình đăng nhập Google.')}
+            {' '}{locale === 'en' ? 'Callback URI:' : 'Callback URI:'}{' '}
+            <code>{googleOAuth.redirect_uri}</code>
+          </p>
+        )}
       </div>
     </div>
   )

@@ -4,7 +4,8 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
 from pathlib import Path
-_REPO_ROOT_ENV = Path(__file__).resolve().parents[3] / ".env"
+_REPO_ROOT_ENV = Path(__file__).resolve().parents[4] / ".env"
+_API_DIR_ENV = Path(__file__).resolve().parents[2] / ".env"
 
 
 class Settings(BaseSettings):
@@ -23,6 +24,7 @@ class Settings(BaseSettings):
     openai_base_url: str = "https://api.openai.com/v1"
     openai_model: str = "gpt-4o-mini"
     openai_timeout_seconds: float = 30.0
+    llm_fallback_enabled: bool = True
     admin_api_key: str | None = None
     app_signing_secret: str | None = None
     auth_secret: str | None = None
@@ -40,11 +42,19 @@ class Settings(BaseSettings):
     flood_model_dir: str | None = None
     allow_unverified_ranker: bool = False
 
-    model_config = SettingsConfigDict(env_file=(str(_REPO_ROOT_ENV), ".env"), extra="ignore")
+    model_config = SettingsConfigDict(env_file=(str(_REPO_ROOT_ENV), str(_API_DIR_ENV), ".env"), extra="ignore")
 
     @property
     def cors_origin_list(self) -> list[str]:
         return [origin.strip() for origin in self.cors_origins.split(",") if origin.strip()]
+
+    @property
+    def llm_is_configured(self) -> bool:
+        return bool(
+            self.openai_api_key and self.openai_api_key.strip()
+            and self.openai_base_url.strip()
+            and self.openai_model.strip()
+        )
 
 
 @lru_cache

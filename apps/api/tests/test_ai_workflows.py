@@ -2,9 +2,10 @@ from datetime import datetime, timedelta, timezone
 
 import pytest
 
-from app.adapters.llm.provider import LLMNotConfigured, NotConfiguredLLMProvider
+from app.adapters.llm.provider import LLMNotConfigured, LLMProviderError, NotConfiguredLLMProvider
 from app.api.dependencies import get_llm_provider
 from app.models.entities import Event, Experience, ExperienceSlot, Itinerary, ItineraryStop, POI, Provider
+from app.services.offline_chat_fallback import build_offline_constraints
 
 
 class FakeStructuredProvider:
@@ -161,4 +162,59 @@ def test_all_eight_versioned_prompt_workflows(client, db_session, sample_experie
 def test_missing_llm_is_explicitly_not_configured():
     with pytest.raises(LLMNotConfigured):
         NotConfiguredLLMProvider().generate("template", {}, {})
+
+
+def test_chat_uses_explicit_offline_fallback_when_llm_is_not_configured(client):
+    client.app.dependency_overrides[get_llm_provider] = lambda: NotConfiguredLLMProvider()
+    response = client.post("/api/chat/message", json={
+        "conversation_id": "fallback-test",
+        "message": "Nhóm mình 2 người muốn làm gốm, bắt đầu 9 giờ, về trước 16 giờ, tổng ngân sách 500 nghìn bằng xe máy.",
+    })
+
+    assert response.status_code == 200, response.text
+    body = response.json()
+    constraints = body["structured_constraints"]
+    assert body["status"] == "fallback"
+    assert body["assistant_mode"] == "local_fallback"
+    assert body["fallback_reason"] == "llm_not_configured"
+    assert body["prompt_version"] is None
+    assert constraints["group_size"] == 2
+    assert constraints["start_time"] == "09:00"
+    assert constraints["return_deadline"] == "16:00"
+    assert constraints["budget_vnd"] == 500_000
+    assert constraints["is_complete"] is True
+    assert "ngoại tuyến" in body["reply"]
+
+
+def test_chat_falls_back_on_external_provider_errors(client):
+    class BrokenProvider:
+        model_name = "broken"
+
+        def generate(self, system_prompt, user_input, schema):
+            raise LLMProviderError("upstream unavailable")
+
+    client.app.dependency_overrides[get_llm_provider] = lambda: BrokenProvider()
+    response = client.post("/api/chat/message", json={"message": "Mình muốn đi bảo tàng."})
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["status"] == "fallback"
+    assert body["fallback_reason"] == "llm_unavailable"
+    assert body["structured_constraints"]["is_complete"] is False
+    assert body["structured_constraints"]["missing_fields"] == [
+        "group_size", "start_time", "return_deadline", "budget_vnd",
+    ]
+    assert "ngoại tuyến" in body["reply"]
+    assert body["structured_constraints"]["intent_weights"]["văn_hóa"] == 1.0
+
+
+def test_offline_parser_does_not_mistake_per_person_price_for_group_budget():
+    constraints, _ = build_offline_constraints(
+        "Hai người, bắt đầu 9 giờ, về trước 16 giờ, ngân sách 500 nghìn mỗi người.",
+        "llm_unavailable",
+    )
+
+    assert constraints.budget_vnd is None
+    assert constraints.is_complete is False
+    assert "budget_vnd" in constraints.missing_fields
 

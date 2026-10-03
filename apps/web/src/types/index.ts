@@ -14,11 +14,27 @@ export interface ChatConstraints {
 }
 
 export interface ChatReply {
-  status: 'parsed'
+  status: 'parsed' | 'fallback'
+  assistant_mode: 'openai_compatible' | 'local_fallback'
   conversation_id: string | null
-  prompt_version: string
+  prompt_version: string | null
+  fallback_version: string | null
+  fallback_reason: 'llm_not_configured' | 'llm_unavailable' | 'invalid_model_output' | null
   reply: string
   structured_constraints: ChatConstraints
+}
+
+export interface ChatServiceStatus {
+  assistant_mode: 'openai_compatible' | 'local_fallback'
+  llm_configured: boolean
+  fallback_available: boolean
+  fallback_version: string
+}
+
+export interface GoogleOAuthStatus {
+  enabled: boolean
+  redirect_uri: string
+  configuration_message: string | null
 }
 
 export interface AuthUser {

@@ -1,5 +1,6 @@
 from uuid import uuid4
 
+from app.api.routes import auth
 from app.models.entities import User
 from app.services.auth_service import hash_password
 
@@ -43,3 +44,29 @@ def test_email_login_and_logout(client, db_session):
     assert client.get("/api/auth/me").status_code == 200
     assert client.post("/api/auth/logout").status_code == 204
     assert client.get("/api/auth/me").status_code == 401
+
+
+def test_google_oauth_status_shows_callback_and_requires_credentials(client, monkeypatch):
+    monkeypatch.setattr(auth.settings, "google_client_id", None)
+    monkeypatch.setattr(auth.settings, "google_client_secret", None)
+    monkeypatch.setattr(auth.settings, "google_redirect_uri", "http://localhost:8000/api/auth/google/callback")
+
+    response = client.get("/api/auth/google/status")
+
+    assert response.status_code == 200
+    assert response.json()["enabled"] is False
+    assert response.json()["redirect_uri"] == "http://localhost:8000/api/auth/google/callback"
+    assert "GOOGLE_CLIENT_ID" in response.json()["configuration_message"]
+
+
+def test_google_oauth_rejects_non_https_production_callback(client, monkeypatch):
+    monkeypatch.setattr(auth.settings, "app_env", "production")
+    monkeypatch.setattr(auth.settings, "google_client_id", "configured")
+    monkeypatch.setattr(auth.settings, "google_client_secret", "configured")
+    monkeypatch.setattr(auth.settings, "google_redirect_uri", "http://api.example.com/api/auth/google/callback")
+
+    response = client.get("/api/auth/google/status")
+
+    assert response.status_code == 200
+    assert response.json()["enabled"] is False
+    assert "HTTPS" in response.json()["configuration_message"]
