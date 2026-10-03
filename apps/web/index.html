@@ -4,6 +4,14 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <meta name="theme-color" content="#064e3b" />
+    <script>
+      // Apply saved theme (or OS preference) before first paint to avoid a flash.
+      try {
+        var t = localStorage.getItem('theme') || (matchMedia('(prefers-color-scheme: light)').matches ? 'light' : 'dark')
+      } catch (e) { t = 'dark' }
+      document.documentElement.dataset.theme = t
+      if (t === 'light') document.querySelector('meta[name="theme-color"]').setAttribute('content', '#f6f3ec')
+    </script>
     <meta name="description" content="Local Explorer AI — Khám phá đúng trải nghiệm, đúng thời điểm tại TP. Hồ Chí Minh với trải nghiệm 3D sống động." />
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
